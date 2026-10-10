@@ -7,10 +7,10 @@
 // here that change is added at full resolution. Each of its texels holds the change for one pixel and
 // that pixel's distance, so only texels at about this pixel's own distance are blended (joint bilateral
 // upsampling, as world_light.fsh's litShare does for the light shafts): a lake's reflection never bleeds
-// onto the shore in front of it. With anti-aliasing the four nearest texels are enough (the pass traces a
-// different pixel of each 2x2 block every frame and the anti-aliasing averages them), without it the
-// sixteen nearest under a tent twice as wide. Only pixels the water marked (the picture's alpha, see
-// WATER_MASK_LIMIT) take it.
+// onto the shore in front of it. The sixteen nearest texels count, under a tent two texels wide, the same
+// every frame. Water texels whose ray met nothing hold no change and count, so a lone hit is averaged
+// with the misses around it instead of growing into a speck. Only pixels the water marked (the picture's
+// alpha, see WATER_MASK_LIMIT) take it.
 
 #include <etna:water_waves.glsl>
 
@@ -22,11 +22,10 @@ vec3 etnaWaterReflection(vec3 color, ivec2 pixel, float dist) {
     if (WaterSsr.x <= 0.0 || Water.x > 0.5 || dist <= 0.0 || texelFetch(InSampler, pixel, 0).a >= WATER_MASK_LIMIT) {
         return color;
     }
-    int radius = Frame.w > 0.5 ? 1 : 2;
-    float spread = float(radius);
-    // Texel c holds pixel 2c + sub: with anti-aliasing sub cycles over the 2x2 block, so on average the
-    // block's centre; without, its first pixel.
-    vec2 p = vec2(pixel) * 0.5 - (Frame.w > 0.5 ? 0.25 : 0.0);
+    const int radius = 2;
+    const float spread = 2.0;
+    // Texel c holds pixel 2c.
+    vec2 p = vec2(pixel) * 0.5;
     vec2 corner = floor(p);
     vec2 f = p - corner;
     ivec2 base = ivec2(corner);
@@ -40,7 +39,7 @@ vec3 etnaWaterReflection(vec3 color, ivec2 pixel, float dist) {
         for (int x = 1 - radius; x <= radius; x++) {
             float wx = max(1.0 - abs(float(x) - f.x) / spread, 0.0);
             vec4 texel = texelFetch(WaterSsrSampler, clamp(base + ivec2(x, y), ivec2(0), last), 0);
-            // Texels that aren't water (distance 0) hold no change and don't count.
+            // Texels that aren't water seen from above (distance 0) don't count.
             if (texel.a <= 0.0) {
                 continue;
             }

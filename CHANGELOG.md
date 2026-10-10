@@ -2,6 +2,13 @@
 
 Every release is for Minecraft 26.4-snapshot-3 with Fabric. Versions: the middle number goes up for new features, the last one for fixes. Jars are on the [Releases](https://github.com/Atomsk-debug/Etna/releases) page.
 
+## 0.8.1 (unreleased)
+
+Fixes for 0.8.0's water.
+
+* **Reflections keep their shapes.** The shore, trees and hills mirrored in the water came out as scattered dark dots. Each reflected ray now takes the same fixed steps every frame and counts as a hit only where it really runs into something, rays that find nothing are averaged in instead of dropped, and the mirror image follows a calmer copy of the waves, so it wobbles as a whole instead of breaking up.
+* **Foam, redone.** Only a thin, faint, bubbly line where still water meets the shore, in a pale colour that no longer glows. Shallow water stays clear (0.8.0 foamed every floor just under the surface into a milky haze), and water flowing down a slope has no foam.
+
 ## 0.8.0 (2026-10-10), "Enchanted"
 
 Magic, and closing the gap with the most popular shader packs. Every new effect has its own setting, none of them is part of the Look, and with Etna off none of them is left.
