@@ -1,0 +1,154 @@
+{
+    "targets": {
+        "shafts": {
+            "width": 960,
+            "height": 540
+        },
+        "air": {},
+        "history0": {
+            "persistent": true
+        },
+        "history1": {
+            "persistent": true
+        }
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/shafts",
+            "inputs": [
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "EtnaShadow",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "shafts",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ],
+                "EtnaShadow": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/world_light",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "Shafts",
+                    "target": "shafts"
+                }
+            ],
+            "output": "air",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/taa",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "air"
+                },
+                {
+                    "sampler_name": "History",
+                    "target": "history0",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "history1",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/copy_dither",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "history1"
+                }
+            ],
+            "output": "minecraft:main",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

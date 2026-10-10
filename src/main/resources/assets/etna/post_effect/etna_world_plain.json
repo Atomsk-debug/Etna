@@ -1,0 +1,113 @@
+{
+    "targets": {
+        "shafts": {
+            "width": 960,
+            "height": 540
+        },
+        "lit": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/shafts",
+            "inputs": [
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "EtnaShadow",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "shafts",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ],
+                "EtnaShadow": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/world_light",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "Shafts",
+                    "target": "shafts"
+                }
+            ],
+            "output": "lit",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/copy_dither",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "lit"
+                }
+            ],
+            "output": "minecraft:main",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

@@ -1,0 +1,333 @@
+{
+    "targets": {
+        "bloom0": {
+            "width": 960,
+            "height": 540
+        },
+        "up0": {
+            "width": 960,
+            "height": 540
+        },
+        "bloom1": {
+            "width": 480,
+            "height": 270
+        },
+        "up1": {
+            "width": 480,
+            "height": 270
+        },
+        "bloom2": {
+            "width": 240,
+            "height": 135
+        },
+        "up2": {
+            "width": 240,
+            "height": 135
+        },
+        "bloom3": {
+            "width": 120,
+            "height": 68
+        },
+        "up3": {
+            "width": 120,
+            "height": 68
+        },
+        "bloom4": {
+            "width": 60,
+            "height": 34
+        },
+        "up4": {
+            "width": 60,
+            "height": 34
+        },
+        "bloom5": {
+            "width": 30,
+            "height": 17
+        },
+        "graded": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_prefilter",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main",
+                    "bilinear": true
+                }
+            ],
+            "output": "bloom0",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "bloom0",
+                    "bilinear": true
+                }
+            ],
+            "output": "bloom1"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "bloom1",
+                    "bilinear": true
+                }
+            ],
+            "output": "bloom2"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "bloom2",
+                    "bilinear": true
+                }
+            ],
+            "output": "bloom3"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "bloom3",
+                    "bilinear": true
+                }
+            ],
+            "output": "bloom4"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "bloom4",
+                    "bilinear": true
+                }
+            ],
+            "output": "bloom5"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_up",
+            "inputs": [
+                {
+                    "sampler_name": "Dst",
+                    "target": "bloom4",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Src",
+                    "target": "bloom5",
+                    "bilinear": true
+                }
+            ],
+            "output": "up4",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_up",
+            "inputs": [
+                {
+                    "sampler_name": "Dst",
+                    "target": "bloom3",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Src",
+                    "target": "up4",
+                    "bilinear": true
+                }
+            ],
+            "output": "up3",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_up",
+            "inputs": [
+                {
+                    "sampler_name": "Dst",
+                    "target": "bloom2",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Src",
+                    "target": "up3",
+                    "bilinear": true
+                }
+            ],
+            "output": "up2",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_up",
+            "inputs": [
+                {
+                    "sampler_name": "Dst",
+                    "target": "bloom1",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Src",
+                    "target": "up2",
+                    "bilinear": true
+                }
+            ],
+            "output": "up1",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_up",
+            "inputs": [
+                {
+                    "sampler_name": "Dst",
+                    "target": "bloom0",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Src",
+                    "target": "up1",
+                    "bilinear": true
+                }
+            ],
+            "output": "up0",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/final",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Bloom",
+                    "target": "up0",
+                    "bilinear": true
+                }
+            ],
+            "output": "graded",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/copy_opaque",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "graded"
+                }
+            ],
+            "output": "minecraft:main"
+        }
+    ]
+}

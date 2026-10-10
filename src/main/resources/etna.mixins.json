@@ -1,0 +1,27 @@
+{
+	"required": true,
+	"package": "it.cosimo.etna.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ChunkSectionLayerMixin",
+		"ChunkSectionsToRenderMixin",
+		"CloudRendererMixin",
+		"FogDataAccessor",
+		"FrontendCommandEncoderMixin",
+		"GameRendererMixin",
+		"GameRendererProfilerMixin",
+		"GameRendererWaterMixin",
+		"LevelRendererMixin",
+		"MinecraftProfilerMixin",
+		"OptionsScreenMixin",
+		"PostChainMixin",
+		"PostPassMixin",
+		"SkyRendererMixin",
+		"VulkanCommandEncoderMixin",
+		"VulkanRenderPassMixin",
+		"WindowMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

@@ -1,0 +1,108 @@
+name: release
+# Releases are made here, on GitHub's side:
+# - A push to main whose mod_version has no release yet builds the jar and publishes release v<mod_version>,
+#   with that version's section of CHANGELOG.md as its notes and the jar and its checksum attached.
+#   So releasing a version is putting it on main (with mod_version and CHANGELOG.md updated).
+# - A release made by hand on the GitHub page gets the jar of its tag attached.
+# - Run by hand (Actions -> release -> Run workflow) on main to publish a missing release.
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: read the version
+        id: version
+        run: |
+          version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)
+          minecraft=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          tag="v$version"
+          skip=false
+          if [ "${{ github.event_name }}" = "release" ]; then
+            if [ "${{ github.event.release.tag_name }}" != "$tag" ]; then
+              echo "Release tag ${{ github.event.release.tag_name }} does not match mod_version $version" >&2
+              exit 1
+            fi
+          elif gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release $tag already exists: nothing to publish."
+            skip=true
+          fi
+          {
+            echo "version=$version"
+            echo "minecraft=$minecraft"
+            echo "tag=$tag"
+            echo "skip=$skip"
+          } >> "$GITHUB_OUTPUT"
+      - name: validate gradle wrapper
+        if: steps.version.outputs.skip == 'false'
+        uses: gradle/actions/wrapper-validation@v6
+      - name: setup jdk
+        if: steps.version.outputs.skip == 'false'
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+      - name: install glslang
+        if: steps.version.outputs.skip == 'false'
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+      - name: validate shaders (GLSL -> SPIR-V)
+        if: steps.version.outputs.skip == 'false'
+        run: python3 tools/validate_shaders.py
+      - name: build
+        if: steps.version.outputs.skip == 'false'
+        run: chmod +x ./gradlew && ./gradlew build
+      - name: find the jar
+        if: steps.version.outputs.skip == 'false'
+        id: jar
+        run: |
+          jar=$(ls build/libs/etna-shaders-*.jar | grep -v -e '-sources\.jar$' -e '-dev\.jar$' | head -1)
+          if [ -z "$jar" ]; then
+            echo "No jar in build/libs" >&2
+            ls -l build/libs >&2
+            exit 1
+          fi
+          (cd build/libs && sha256sum "$(basename "$jar")" | tee "$(basename "$jar").sha256")
+          echo "jar=$jar" >> "$GITHUB_OUTPUT"
+      - name: publish the release
+        if: steps.version.outputs.skip == 'false' && github.event_name != 'release'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          # This version's section of CHANGELOG.md: from its "## <version>" heading to the next "## ".
+          awk -v v="$version" '
+            /^## / { if (found) exit; if ($2 == v) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+          {
+            echo
+            echo "For Minecraft ${{ steps.version.outputs.minecraft }} with Fabric Loader and Fabric API. Put the jar in your mods folder."
+          } >> notes.md
+          jar="${{ steps.jar.outputs.jar }}"
+          gh release create "${{ steps.version.outputs.tag }}" "$jar" "$jar.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "Etna Shaders $version for Minecraft ${{ steps.version.outputs.minecraft }}" \
+            --notes-file notes.md
+      - name: attach the jar to the release made by hand
+        if: steps.version.outputs.skip == 'false' && github.event_name == 'release'
+        run: |
+          jar="${{ steps.jar.outputs.jar }}"
+          gh release upload "${{ steps.version.outputs.tag }}" "$jar" "$jar.sha256" --clobber
