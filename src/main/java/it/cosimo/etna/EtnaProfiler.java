@@ -908,7 +908,7 @@ public final class EtnaProfiler {
 				this.levelMeanMs(this.setupNs), this.meanMs(this.extractNs), this.meanMs(this.submitNs), this.submitSplit(),
 				this.meanMs(this.encodeNs), this.meanMs(this.waitNs), this.passes > 0L, this.perFrame(this.draws), this.perFrame(this.passes),
 				this.perFrame(this.copies), this.castersShort(), this.motion, this.turned, this.lowestLimit, this.levelFrames,
-				this.gpuFrames, gpuPassMs, this.gpuMeanMs(this.gpuFrameNs), this.collections());
+				this.gpuFrames, gpuPassMs, this.gpuMeanMs(this.gpuFrameNs), this.collections(), this.casterFrames);
 		}
 
 		private static String count(double n) {
@@ -925,11 +925,12 @@ public final class EtnaProfiler {
 	/**
 	 * One benchmark step's figures: times in milliseconds per frame, counts per frame. gpuPassMs follows
 	 * {@link EtnaGpuTimer#PASSES} and, like gpuFrameMs, means nothing when gpuFrames is 0. collections is -1
-	 * when the JVM doesn't report its garbage collections.
+	 * when the JVM doesn't report its garbage collections. casterFrames counts the frames that drew the
+	 * shadow map (with the log on).
 	 */
 	record Result(int frames, double fps, double intervalMs, double p95Ms, double renderMs, double setupMs, double extractMs,
 			double submitMs, boolean submitSplit, double encodeMs, double waitMs, boolean counted, double draws, double passes,
 			double copies, String casters, double motion, boolean turned, int lowestLimit, int levelFrames, int gpuFrames,
-			double[] gpuPassMs, double gpuFrameMs, long collections) {
+			double[] gpuPassMs, double gpuFrameMs, long collections, int casterFrames) {
 	}
 }

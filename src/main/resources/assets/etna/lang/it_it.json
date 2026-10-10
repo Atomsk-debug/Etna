@@ -121,6 +121,7 @@
 	"etna.options.benchmark.desc": "Dura circa 130 secondi, in un mondo: Etna prova le sue impostazioni una alla volta, scrive in latest.log quanto costa ognuna e poi rimette tutto com'era. Stai fermo e non muovere il mouse: un passo disturbato da un movimento della visuale o da uno scatto viene misurato di nuovo, il che può aggiungere fino a una ventina di secondi. Prima disattiva la mod che limita i frame e il Sincronismo verticale.",
 	"etna.benchmark.start": "Benchmark di Etna: stai fermo e non muovere il mouse per circa %s s; prima disattiva la mod che limita i frame al secondo.",
 	"etna.benchmark.done": "Benchmark di Etna finito: i risultati sono in latest.log.",
+	"etna.benchmark.unsteady": "Benchmark di Etna finito, ma la scena è cambiata durante la prova: i risultati in latest.log sono approssimativi. Rifallo stando fermo, quando i chunk intorno sono caricati.",
 	"etna.benchmark.unavailable": "Il benchmark di Etna non può partire: il registro prestazioni si è fermato dopo un errore in questa sessione (vedi latest.log). Riavvia il gioco per riprovare.",
 	"etna.benchmark.stopped": "Benchmark di Etna interrotto: %s. Tutte le impostazioni sono tornate com'erano.",
 	"etna.benchmark.stopped.world": "sei uscito dal mondo",
