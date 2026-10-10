@@ -4,7 +4,11 @@ Every release is for Minecraft 26.4-snapshot-3 with Fabric. Versions: the middle
 
 ## 0.8.1 (unreleased)
 
-Fixes for 0.8.0's water.
+Fixes for 0.8.0's water, and shadows that soften with distance.
+
+* **Shadows soften with distance, as real ones do.** A shadow is sharp where it meets what casts it and blurs the further it reaches: a tree's shadow is crisp at the trunk and a soft smudge at its far end, and long evening shadows lose their detail and fade towards the tip. Before, every shadow edge had the same blur. Shadow Softness now also sets how quickly they soften; at its lowest, edges stay hard everywhere.
+* **Long low-sun shadows are fainter.** Below about 20 degrees the sky fills shadows in a little, up to a third lighter at the horizon.
+* Far shadows fade out instead of stopping at a straight line about 180 blocks away when looking towards or away from a low sun, and ground more than 320 blocks below the camera along the light (far away under a low sun, or seen from very high up) no longer turns dark.
 
 * **Reflections keep their shapes.** The shore, trees and hills mirrored in the water came out as scattered dark dots. Each reflected ray now takes the same fixed steps every frame and counts as a hit only where it really runs into something, rays that find nothing are averaged in instead of dropped, and the mirror image follows a calmer copy of the waves, so it wobbles as a whole instead of breaking up.
 * **Foam, redone.** Only a thin, faint, bubbly line where still water meets the shore, in a pale colour that no longer glows. Shallow water stays clear (0.8.0 foamed every floor just under the surface into a milky haze), and water flowing down a slope has no foam.

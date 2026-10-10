@@ -66,6 +66,10 @@ float sunAt(vec3 clip) {
     #else
     float depth = clip.z * 0.5 + 0.5;
     #endif
+    // Beyond the far end of the map's depth range the cleared map holds nothing: lit, as in the terrain.
+    if (depth <= 0.0) {
+        return 1.0;
+    }
     // Reversed depth: bigger is closer to the light.
     float stored = textureLod(EtnaShadowSampler, uv, 0.0).r;
     float lit = stored > depth + EtnaShadowInfo.z * 0.05 ? 0.0 : 1.0;
