@@ -158,6 +158,12 @@ public final class EtnaShadows {
 	/** Fewest blocks a shadow caster is kept below the lowest thing on screen (see receiverFloor). */
 	private static final int FLOOR_MARGIN = 16;
 	/**
+	 * The widest blur of the shadows that soften with distance from their caster, in blocks
+	 * (SHADOW_SPREAD_BLOCKS in terrain_shadow.glsl), and the shadow softness at which they are off.
+	 */
+	private static final float SPREAD_BLOCKS = 1.2F;
+	private static final float SPREAD_OFF_SOFTNESS = 0.25F;
+	/**
 	 * How far the sun may move the shadow of something STEP_HEIGHT blocks up, on level ground, before the map
 	 * follows it (chooseMap): about a texel of the map 20 blocks from the camera at Ultra, three right by it.
 	 */
@@ -835,7 +841,8 @@ public final class EtnaShadows {
 		// of the map there. Sideways: its box (softness + 1 texels each way) plus the 1.2-texel push off the
 		// surface, along both axes. Along the light: its receiver plane, at most 8 texels of depth per texel
 		// over softness + 0.5 texels on each axis. The leaf light (a 3x3 box) and the shafts (one texel)
-		// reach less.
+		// reach less; the shadows that soften with distance reach further near the middle of the map, where
+		// the texels are small (floorMargin).
 		float reachTexels = 1.415F * (softness + 2.2F) + 16.0F * (softness + 0.5F);
 		// A texel at the edge of the map, in blocks; the distortion shrinks it towards the middle.
 		float edgeTexel = 2.0F * radius / size / (1.0F - DISTORTION);
@@ -857,7 +864,7 @@ public final class EtnaShadows {
 		// The most any section can need: a section that can't lower the floor even with it is skipped without
 		// the arithmetic.
 		float cornerFactor = 1.0F - DISTORTION + DISTORTION * farthest;
-		int largestMargin = Math.max(FLOOR_MARGIN, Mth.ceil(edgeTexel * cornerFactor * cornerFactor * reachTexels) + 2);
+		int largestMargin = floorMargin(softness, edgeTexel * cornerFactor * cornerFactor, reachTexels, radius);
 		float r00 = rotation.m00();
 		float r10 = rotation.m10();
 		float r20 = rotation.m20();
@@ -884,11 +891,50 @@ public final class EtnaShadows {
 				// as above).
 				float far = Math.min(((float) Math.sqrt(lx * lx + ly * ly) + 15.0F + push) / radius, farthest);
 				float factor = 1.0F - DISTORTION + DISTORTION * far;
-				margin = Math.max(FLOOR_MARGIN, Mth.ceil(edgeTexel * factor * factor * reachTexels) + 2);
+				margin = floorMargin(softness, edgeTexel * factor * factor, reachTexels, radius);
 			}
 			floor = Math.min(floor, y - margin);
 		}
 		return floor;
+	}
+
+	/**
+	 * receiverFloor's margin below a section whose lookups land on texels up to texelBlocks wide: the filter's
+	 * reach (reachTexels of those texels), or the wider one of the shadows that soften with distance, sideways
+	 * and behind, plus two blocks; at least FLOOR_MARGIN.
+	 */
+	private static int floorMargin(float softness, float texelBlocks, float reachTexels, float radius) {
+		float spread = spreadSideways(softness, texelBlocks, radius) + spreadBehind(softness, texelBlocks);
+		return Math.max(FLOOR_MARGIN, Mth.ceil(Math.max(texelBlocks * reachTexels, spread)) + 2);
+	}
+
+	/**
+	 * How far sideways, in blocks, the shadows that soften with distance (terrain_shadow.glsl) read the map round
+	 * a point whose texels are at most texelBlocks wide, in a map `radius` blocks across each way; 0 when they
+	 * are off. They look for casters SPREAD_BLOCKS round the point, counted in texels of the point's own size;
+	 * further out the texels grow, by the most near the middle of the map, where the distortion grows them
+	 * fastest. Then the push off the surface (up to 1.5 texels) and the four texels round each read (up to 2.2
+	 * texels further).
+	 */
+	private static float spreadSideways(float softness, float texelBlocks, float radius) {
+		if (!(softness > SPREAD_OFF_SOFTNESS)) {
+			return 0.0F;
+		}
+		float grow = 1.0F + DISTORTION * (SPREAD_BLOCKS + 2.0F) / ((1.0F - DISTORTION) * radius);
+		return SPREAD_BLOCKS * grow * grow + 4.0F * texelBlocks;
+	}
+
+	/**
+	 * How far behind a point, away from the light, the same shadows compare the map with the surface's plane, in
+	 * blocks; 0 when they are off. The plane climbs at most 8 texels of depth per texel on each axis (the clamp
+	 * in etnaShadowFilter); their disc reaches SPREAD_BLOCKS, or softness + 1 texels where that is wider, plus a
+	 * texel on each axis for the reads' own texels.
+	 */
+	private static float spreadBehind(float softness, float texelBlocks) {
+		if (!(softness > SPREAD_OFF_SOFTNESS)) {
+			return 0.0F;
+		}
+		return 8.0F * (1.4143F * Math.max(SPREAD_BLOCKS, (softness + 1.0F) * texelBlocks) + 2.0F * texelBlocks);
 	}
 
 	/** Sort key: nearest the light (largest z) first, then the order found, which the low 32 bits give back. */
@@ -1084,10 +1130,13 @@ public final class EtnaShadows {
 				float texelBlocks = Math.min(texelAt(far + 2.0F * look, radius, edgeTexel), largestTexel);
 				// Sideways: the filter, the leaf light, and the light from one block above a point under water
 				// (terrain_water.glsl), with the texel its point lands in.
-				side[b] = Math.max(filter * texelBlocks, 1.0F + 0.71F * texelBlocks) + SLOP;
+				// The shadows that soften with distance read wider still.
+				side[b] = Math.max(Math.max(filter * texelBlocks, 1.0F + 0.71F * texelBlocks), spreadSideways(softness, texelBlocks, radius))
+					+ SLOP;
 				// The filter compares each texel with the receiver's own plane there, which can lie up to 8 texels
-				// of depth per texel further from the light, over softness + 0.5 texels on each axis.
-				behind[b] = 16.0F * (softness + 0.5F) * texelBlocks;
+				// of depth per texel further from the light, over softness + 0.5 texels on each axis (over the
+				// wider disc, for the shadows that soften with distance).
+				behind[b] = Math.max(16.0F * (softness + 0.5F) * texelBlocks, spreadBehind(softness, texelBlocks));
 				// The water's depth: the four texels around the surface point, and twelve points up to 4 blocks
 				// from it on the water's plane (THICKNESS_RING in terrain_water.glsl), with the texel each lands in.
 				water[b] = Math.max(4.0F + 0.71F * texelBlocks, DIAGONAL * texelBlocks) + SLOP;
