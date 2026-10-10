@@ -2,7 +2,7 @@
 
 Every release is for Minecraft 26.4-snapshot-3 with Fabric. Versions: the middle number goes up for new features, the last one for fixes. Jars are on the [Releases](https://github.com/Atomsk-debug/Etna/releases) page.
 
-## 0.8.0 (unreleased), "Enchanted"
+## 0.8.0 (2026-10-10), "Enchanted"
 
 Magic, and closing the gap with the most popular shader packs. Every new effect has its own setting, none of them is part of the Look, and with Etna off none of them is left.
 
