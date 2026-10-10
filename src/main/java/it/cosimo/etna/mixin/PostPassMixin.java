@@ -8,6 +8,7 @@ import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import it.cosimo.etna.EtnaClient;
 import it.cosimo.etna.EtnaLook;
+import it.cosimo.etna.EtnaMotes;
 import it.cosimo.etna.EtnaShadows;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
@@ -33,6 +34,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * has: in Etna's passes an "EtnaShadow" block gets the terrain's buffer, and an "EtnaShadow" input, which
  * the chain points at main's depth as a stand-in, is swapped for the map (EtnaShadows.POST_MAP) before the
  * pass is first drawn. The pass's bindings were laid out from the chain's names, so they stay the same.
+ * The same way, the last world pass's "EtnaMotes" block gets the fireflies' buffer (EtnaMotes), which it keeps
+ * for the session.
  *
  * Vanilla also opens every pass by loading what its target held, because a pass may draw over part of it.
  * Every Etna pass draws every pixel of its target with no blending, so an Etna pass that writes one of
@@ -57,6 +60,10 @@ public abstract class PostPassMixin {
 	@Unique
 	private boolean etna$shadowBlock;
 
+	/** True when this pass holds the fireflies' block (EtnaMotes), which it must not close. */
+	@Unique
+	private boolean etna$motesBlock;
+
 	@Inject(method = "<init>", at = @At("TAIL"))
 	private void etna$sharedSettings(RenderPipeline pipeline, Identifier outputTargetId, Map<String, List<UniformValue>> uniformGroups,
 			List<PostPass.Input> inputs, CallbackInfo ci) {
@@ -75,6 +82,12 @@ public abstract class PostPassMixin {
 				customUniforms.put(EtnaShadows.BLOCK, EtnaShadows.postBlock());
 				etna$shadowBlock = true;
 			}
+			GpuBuffer motesFixed = customUniforms.get(EtnaMotes.BLOCK);
+			if (motesFixed != null) {
+				motesFixed.close();
+				customUniforms.put(EtnaMotes.BLOCK, EtnaMotes.postBlock());
+				etna$motesBlock = true;
+			}
 			// The pass keeps this same list (createPass makes it for the pass alone).
 			inputs.replaceAll(input -> input.samplerName().equals(EtnaShadows.MAP_INPUT) ? EtnaShadows.POST_MAP : input);
 		}
@@ -91,6 +104,11 @@ public abstract class PostPassMixin {
 		if (etna$shadowBlock) {
 			customUniforms.remove(EtnaShadows.BLOCK);
 			etna$shadowBlock = false;
+		}
+		// The fireflies' block stays EtnaMotes' own too.
+		if (etna$motesBlock) {
+			customUniforms.remove(EtnaMotes.BLOCK);
+			etna$motesBlock = false;
 		}
 	}
 

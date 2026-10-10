@@ -1,10 +1,11 @@
 // Etna's terrain uniform block, and the names the terrain shaders read the light and the settings by.
 // terrain.vsh and terrain.fsh both include it, before any other Etna terrain include, so both stages
 // see the same block. EtnaShadows.java fills it for every shadow-receiving terrain draw (define
-// ETNA_SHADOWS) and binds it to the lit clouds too (define ETNA_CLOUD_LIGHT, clouds.fsh): std140,
-// 512 bytes (EtnaShadows.UBO_SIZE), written in this order by EtnaShadows.writeUbo. The first eight
+// ETNA_SHADOWS) and binds it to the lit clouds (define ETNA_CLOUD_LIGHT, clouds.fsh) and to Etna's rain
+// and snow (ETNA_WEATHER_LIGHT, weather.vsh and weather.fsh) too: std140,
+// 576 bytes (EtnaShadows.UBO_SIZE), written in this order by EtnaShadows.writeUbo. The first eight
 // fields take bytes 0 to 175; each later one starts at the byte offset its comment begins with.
-#if defined(ETNA_SHADOWS) || defined(ETNA_CLOUD_LIGHT)
+#if defined(ETNA_SHADOWS) || defined(ETNA_CLOUD_LIGHT) || defined(ETNA_WEATHER_LIGHT)
 layout(std140) uniform EtnaShadow {
     mat4 EtnaShadowMat;  // camera-relative position -> shadow map clip space
     vec4 EtnaLightDir;   // xyz: direction towards the sun (or the moon at night), w: light strength
@@ -31,7 +32,11 @@ layout(std140) uniform EtnaShadow {
     vec4 EtnaSkyMoonHigh;// 400. rgb: moonHigh, w: 0
     vec4 EtnaSkyOvercast;// 416. rgb: overcast, w: 1 while Etna draws the sky (so the sky behind the land is the model's), else 0
     mat4 EtnaShadowMat2; // 432. the second shadow map (EtnaShadowSampler2), as EtnaShadowMat for the first, while the terrain fades from one to the other as the sun moves (EtnaShadows.chooseMap); EtnaShadowMat the rest of the time
-    vec4 EtnaShadowFade; // 496. x: how much of the second map shadowVisibility and leafBacklight mix in (0 .. 0.5; 0: the first alone), yzw: reserved (0)
+    vec4 EtnaShadowFade; // 496. x: how much of the second map shadowVisibility and leafBacklight mix in (0 .. 0.5; 0: the first alone), y: the Nether's lava light from below in vanilla's units (0 outside the Nether; EtnaAir.lavaLight, terrain_dark.glsl), z: the lava sea's surface as a world height, w: reserved (0)
+    vec4 EtnaSurface;    // 512. settings menu (EtnaMaterials.java). x: materials, y: puddles, z: sparkles, w: glowing flowers (each 0 .. 1)
+    vec4 EtnaSurface2;   // 528. x: how much the bright specks of glowing blocks glow (the glowing blocks setting, 0 .. 1), yzw: reserved (0)
+    vec4 EtnaNight;      // 544. the aurora's light on the land (EtnaSky.writeNight). rgb: its colour, luma 1 (a green with a little violet), w: how much aurora is in the sky (0 .. 1, eased over the biome, the moon, the night and the weather; 0 by day, in rain, outside the overworld and with Etna or the Aurora setting off)
+    vec4 EtnaWaterSsr;   // 560. settings menu (EtnaWaterSsr.java). x: shoreline foam (0 .. 1), y: glitter (0 .. 1); for the reflections pass (water_ssr.fsh): z: estimate of etnaDaylight, the lightmap under the open sky (0 .. 1), w: the camera's height above a whole block (camera y - floor(camera y))
 };
 #endif
 
@@ -43,7 +48,7 @@ layout(std140) uniform EtnaShadow {
 // their sliders to 0 really takes them away. A sheen here would sit in the wrong place anyway,
 // since this sun never moves. The cost: water and glass drawn with improved transparency keep
 // vanilla's torch colour while the blocks around them take the warmer one.
-#if defined(ETNA_SHADOWS) || defined(ETNA_CLOUD_LIGHT)
+#if defined(ETNA_SHADOWS) || defined(ETNA_CLOUD_LIGHT) || defined(ETNA_WEATHER_LIGHT)
 #define ETNA_LIGHT_DIR EtnaLightDir.xyz
 #define ETNA_LIGHT_STRENGTH EtnaLightDir.w
 #define ETNA_SHADOW_DARKNESS EtnaLook.y

@@ -3,10 +3,12 @@ package it.cosimo.etna;
 import com.mojang.blaze3d.buffers.Std140Builder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.levelgen.Heightmap;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
@@ -26,9 +28,21 @@ import org.joml.Vector4f;
  * between the leaves make shafts; in an open field there is little of it.
  * How covered the sky is and how far underground the camera is are read from the world around the camera
  * and eased over a second or two, so stepping under a tree or into a cave never switches the air at once.
- * Everything is 0 in dimensions without a sun and under Blindness and Darkness, which hide the world.
+ * Under Blindness and Darkness, which hide the world, everything is 0.
  *
- * An error here turns the mist and the shafts off for the session (nothing added), never anything else.
+ * Dimensions without a sun have air of their own (sunless), in the same fields (see writePost): in the
+ * Nether a haze that glows in the colour of the biome's own fog, as thick as vanilla's fog there, and a low
+ * mist that glows like the lava over the lava sea, thinning upwards within a few blocks; the lava sea also
+ * lights the undersides of the land near it from below (the terrain's EtnaShadowFade.yz, lavaLight). The
+ * haze is brighter than the dark fog it lies over, never darker, and leaves the first blocks around the
+ * player clear, so the Nether reads as well as before. In the End, a faint violet haze. The Nether air
+ * setting scales all of it, 0 turns it off.
+ *
+ * The bloom fog (bloomFog, bloomFogReach) is worked out here too: how much distant scenery feeds the bloom
+ * this frame, by night, rain, how deep underground the camera is, and in the Nether and the End.
+ *
+ * An error here turns the mist, the shafts, the Nether's air and the bloom fog off for the session (nothing
+ * added), never anything else.
  */
 public final class EtnaAir {
 	/** Densities per block with the setting at 1; the looks use about half of it. */
@@ -49,6 +63,45 @@ public final class EtnaAir {
 	/** After a longer gap between frames (a menu, loading) they start where they are. */
 	private static final float GAP = 1.0F;
 
+	/**
+	 * The Nether's haze with the setting at 1: optical depth across vanilla's own fog distance (its
+	 * environmental fog end), so a biome vanilla fogs more thickly gets a thicker haze.
+	 */
+	private static final float NETHER_HAZE_DEPTH = 1.0F;
+	/**
+	 * The haze glows: its colour is the biome's fog colour lifted to this many times its brightness, at most
+	 * to NETHER_HAZE_LUMA (display luma). A fog that is brighter already (Basalt Deltas) keeps its own.
+	 */
+	private static final float NETHER_HAZE_GAIN = 2.2F;
+	private static final float NETHER_HAZE_LUMA = 0.3F;
+	/** The lava mist's density per block at the lava sea's surface with the setting at 1. */
+	private static final float LAVA_MIST = 0.05F;
+	/** Its glow (display colour): the lava's own orange, a little softer. */
+	private static final Vector3f LAVA_MIST_COLOR = new Vector3f(0.95F, 0.40F, 0.12F);
+	/** The lava sea's surface, below sea level: its top blocks are at sea level - 1 and filled 8/9 high. */
+	private static final float LAVA_SURFACE = -1.0F / 9.0F;
+	/** Lava light from below on the land near the lava sea, in vanilla's units, with the setting at 1. */
+	private static final float LAVA_LIGHT = 0.30F;
+	/** The End's faint violet haze: density per block with the setting at 1, and its colour. */
+	private static final float END_HAZE = 0.004F;
+	private static final Vector3f END_HAZE_COLOR = new Vector3f(0.20F, 0.12F, 0.30F);
+
+	/**
+	 * Bloom fog: how much distant scenery feeds the bloom (bloom_prefilter.fsh), with the setting at 1, at
+	 * night, in full rain, deep in a cave, in the Nether and in the End; and over how many blocks the feed
+	 * builds up with distance in each.
+	 */
+	private static final float FOG_FEED_NIGHT = 1.0F;
+	private static final float FOG_FEED_RAIN = 1.5F;
+	private static final float FOG_FEED_CAVE = 1.5F;
+	private static final float FOG_FEED_NETHER = 2.0F;
+	private static final float FOG_FEED_END = 1.0F;
+	private static final float FOG_FEED_MAX = 2.0F;
+	private static final float FOG_REACH_NIGHT = 192.0F;
+	private static final float FOG_REACH_RAIN = 96.0F;
+	private static final float FOG_REACH_CAVE = 48.0F;
+	private static final float FOG_REACH_END = 160.0F;
+
 	/** x: ground mist, y: haze, z: cave murk (densities per block), w: camera height above sea level. */
 	private static final Vector4f mist = new Vector4f();
 	/** rgb: the mist's colour, w: render distance in blocks. */
@@ -61,6 +114,12 @@ public final class EtnaAir {
 	private static float cover;
 	/** How far underground the camera is (0 open air .. 1 a cave), eased. */
 	private static float cave;
+	/** Bloom fog: the feed (setting times this frame's amount) and 1 / the blocks over which it builds up. */
+	private static float bloomFog;
+	private static float bloomFogDensity;
+	/** The terrain's lava light from below (0 outside the Nether), and the lava sea's surface (world height). */
+	private static float lavaLight;
+	private static float lavaSurface;
 	/** System.nanoTime of the last update, 0 before the first. */
 	private static long lastFrame;
 	private static boolean broken;
@@ -85,8 +144,12 @@ public final class EtnaAir {
 			CameraRenderState camera = state.cameraRenderState;
 			Minecraft mc = Minecraft.getInstance();
 			ClientLevel level = mc.level;
-			if (!hasSun || level == null || camera.entityRenderState.doesMobEffectBlockSky) {
+			if (level == null || camera.entityRenderState.doesMobEffectBlockSky) {
 				clear();
+				return;
+			}
+			if (!hasSun) {
+				sunless(state, level, mc);
 				return;
 			}
 			float ease = dt > GAP ? 1.0F : 1.0F - (float) Math.exp(-dt / EASE);
@@ -122,14 +185,25 @@ public final class EtnaAir {
 			// Golden hour: all of the shafts' air with the light low, a quarter of it with the light high.
 			float gold = 0.25F + 0.75F * (1.0F - smoothstep(0.1F, 0.55F, light.y));
 			shaftAir = SHAFT_AIR * EtnaConfig.lightRays.value * gold * (0.15F + 0.85F * cover);
+			lavaLight = 0.0F;
+			// Bloom fog: night, rain and caves each add their share of feed, and the distance it builds up over
+			// is their mix, weighted by those shares.
+			float nightFeed = FOG_FEED_NIGHT * night * open;
+			float rainFeed = FOG_FEED_RAIN * rain * open;
+			float caveFeed = FOG_FEED_CAVE * cave;
+			float feed = nightFeed + rainFeed + caveFeed;
+			bloomFog = EtnaConfig.bloomFog.value * Math.min(feed, FOG_FEED_MAX);
+			bloomFogDensity = feed > 1e-4F
+				? (nightFeed / FOG_REACH_NIGHT + rainFeed / FOG_REACH_RAIN + caveFeed / FOG_REACH_CAVE) / feed
+				: 1.0F / FOG_REACH_NIGHT;
 		} catch (RuntimeException e) {
 			broken = true;
 			clear();
-			EtnaClient.LOGGER.error("Etna: the mist and the light shafts failed, they are off for this session", e);
+			EtnaClient.LOGGER.error("Etna: the mist, the light shafts and the Nether's air failed, they are off for this session", e);
 		}
 	}
 
-	/** Nothing in the air: no mist, no shafts, open sky. */
+	/** Nothing in the air: no mist, no shafts, open sky, no Nether air, no bloom fog. */
 	private static void clear() {
 		mist.set(0.0F);
 		mistColor.set(0.0F);
@@ -137,6 +211,66 @@ public final class EtnaAir {
 		shaftAir = 0.0F;
 		cover = 0.0F;
 		cave = 0.0F;
+		bloomFog = 0.0F;
+		bloomFogDensity = 0.0F;
+		lavaLight = 0.0F;
+		lavaSurface = 0.0F;
+	}
+
+	/**
+	 * The air of a dimension without a sun, in the fields writePost hands the world pass (air.glsl's
+	 * etnaSunlessAir): Mist x the lava mist's density at the lava sea's surface, y the haze's density, w the
+	 * camera's height above the lava sea's surface; MistColor rgb the haze's glow, w the distance vanilla's
+	 * fog ends at, where the haze stops thickening; AirSun rgb the lava mist's glow. The End (its own sky)
+	 * gets the violet haze alone; any other sunless dimension the Nether's air, with all of the lava mist
+	 * where the biome's fog is warm and less of it where it is not.
+	 */
+	private static void sunless(LevelRenderState state, ClientLevel level, Minecraft mc) {
+		CameraRenderState camera = state.cameraRenderState;
+		FogData fog = camera.fogData;
+		boolean end = state.skyRenderState.skybox == DimensionType.Skybox.END;
+		shaftAir = 0.0F;
+		cover = 0.0F;
+		cave = 0.0F;
+		float setting = EtnaConfig.netherAir.value;
+		float renderDistance = mc.options.getEffectiveRenderDistance() * 16.0F;
+		float fogEnd = Math.clamp(fog.environmentalEnd, 16.0F, renderDistance);
+		// A boss's world fog (the Wither) is meant to hide things: vanilla's then, as for Blindness.
+		if (setting <= 0.0F || fog.shouldCreateBossFog) {
+			mist.set(0.0F);
+			mistColor.set(0.0F);
+			sunColor.set(0.0F);
+			lavaLight = 0.0F;
+			lavaSurface = 0.0F;
+		} else if (end) {
+			mist.set(0.0F, END_HAZE * setting, 0.0F, 0.0F);
+			mistColor.set(END_HAZE_COLOR.x, END_HAZE_COLOR.y, END_HAZE_COLOR.z, renderDistance);
+			sunColor.set(0.0F);
+			lavaLight = 0.0F;
+			lavaSurface = 0.0F;
+		} else {
+			float r = fog.color.x;
+			float g = fog.color.y;
+			float b = fog.color.z;
+			float luma = 0.2126F * r + 0.7152F * g + 0.0722F * b;
+			float glowLuma = Math.max(luma, Math.min(luma * NETHER_HAZE_GAIN, NETHER_HAZE_LUMA));
+			float lift = luma > 1e-4F ? glowLuma / luma : 0.0F;
+			// Warm fog (the Nether Wastes, the Crimson Forest): all of the lava mist. Cool or grey fog (the Warped
+			// Forest, the Soul Sand Valley, the Basalt Deltas): less of it, so their own colour leads.
+			float warm = smoothstep(0.0F, 0.5F, (r - Math.max(g, b)) / Math.max(r, 1e-3F));
+			lavaSurface = level.getSeaLevel() + LAVA_SURFACE;
+			mist.set(
+				LAVA_MIST * setting * (0.4F + 0.6F * warm),
+				NETHER_HAZE_DEPTH / fogEnd * setting,
+				0.0F,
+				(float) (camera.pos.y - lavaSurface)
+			);
+			mistColor.set(r * lift, g * lift, b * lift, fogEnd);
+			sunColor.set(LAVA_MIST_COLOR.x, LAVA_MIST_COLOR.y, LAVA_MIST_COLOR.z, 0.0F);
+			lavaLight = LAVA_LIGHT * setting;
+		}
+		bloomFog = EtnaConfig.bloomFog.value * (end ? FOG_FEED_END : FOG_FEED_NETHER);
+		bloomFogDensity = end ? 1.0F / FOG_REACH_END : 1.0F / Math.max(0.5F * fogEnd, 16.0F);
 	}
 
 	/** The share of a 5x5 grid of columns around the camera whose highest solid block or leaf is above the eye. */
@@ -170,7 +304,8 @@ public final class EtnaAir {
 	/**
 	 * The Mist, MistColor, Shafts and AirSun vec4s of the post passes' EtnaSettings block, bytes 352 to 415. Shafts.w is
 	 * the shadow map's radius while the shafts pass can march the map this frame, else 0: the shaders then
-	 * leave the shafts out and light the mist by the open sky instead.
+	 * leave the shafts out and light the mist by the open sky instead. Without a sun (EtnaSettings' Air.w 0)
+	 * Mist, MistColor and AirSun hold the sunless air instead (see sunless).
 	 */
 	public static void writePost(Std140Builder builder) {
 		boolean anything = shaftAir > 0.0F || mist.x > 0.0F || mist.y > 0.0F || mist.z > 0.0F;
@@ -179,6 +314,26 @@ public final class EtnaAir {
 			.putVec4(mistColor)
 			.putVec4(new Vector4f(radius > 0.0F ? shaftAir : 0.0F, cover, cave, radius))
 			.putVec4(sunColor);
+	}
+
+	/** The bloom fog's feed this frame, for EtnaSettings' Glow.y: the setting times the amount for the state of the air. */
+	public static float bloomFog() {
+		return bloomFog;
+	}
+
+	/** One over the distance in blocks over which the bloom fog builds up, for EtnaSettings' Glow.w. */
+	public static float bloomFogReach() {
+		return bloomFogDensity;
+	}
+
+	/** The terrain's lava light from below, for its EtnaShadowFade.y: 0 outside the Nether. */
+	public static float lavaLight() {
+		return lavaLight;
+	}
+
+	/** The lava sea's surface (world height), for the terrain's EtnaShadowFade.z. */
+	public static float lavaSurface() {
+		return lavaSurface;
 	}
 
 	private static float smoothstep(float edge0, float edge1, float x) {

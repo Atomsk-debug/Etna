@@ -29,13 +29,18 @@ Made first for Apple Silicon Macs (MoltenVK), and meant to work on Windows and L
   stars. The same sky colours the sunlight, the shade, the clouds, the distance and the water.
 * Soft shadows from the sun and the moon that glide as the sun moves, plus shadows of drifting clouds.
 * The sun's path leans south (25°, adjustable), so noon shadows have a direction.
+* At night: the Milky Way, aurora over cold biomes, shooting stars, a round moon with real phases, and fireflies
+  over the meadows. Rainbows after rain, a sky tinted by each biome, and a violet End sky.
 
 **Air**
 * Light shafts through trees at dawn and dusk, valley mist in the morning and evening, haze in rain.
+* Thin rain lit by the sky and by torches, soft snow, distant lights glowing in damp air, and the Nether's own
+  glowing haze over its lava seas.
 
 **Surfaces**
 * Relief and sheen worked out from each block's own texture, so any resource pack works.
-* Ground gets wet in rain and dries slowly. Leaves glow with the sun behind them.
+* Metals, gems, polished stone, glass and ice each shine their own way; ores glint, flowers glow faintly at night.
+* Ground gets wet in rain, puddles form and dry slowly. Leaves glow with the sun behind them.
 * Leaves, grass, flowers, crops, kelp and vines sway in gusty wind, bending from their roots.
 
 **Light in the dark**
@@ -44,13 +49,16 @@ Made first for Apple Silicon Macs (MoltenVK), and meant to work on Windows and L
   brightening the rest.
 
 **Water**
-* Waves, sky reflections, sun glints on the ripples, clear shallows and deep blue depths.
+* Waves, reflections of the shore and the sky, foam along the shore, sun glints and glitter on the ripples, clear
+  shallows and deep blue depths.
 * Under water: fog in the biome's water colour, caustics, light shafts on the sea floor and Snell's window.
 
 **Image**
 * Temporal anti-aliasing, ambient occlusion, sharpening, bloom on the brightest things only, a soft tone curve
   and eye adaptation.
 * Four looks: Natural (default), Soft, Vivid and Cinematic.
+* Eleven moods on top, each made for a style of resource pack (Faithful, Bare Bones, Mizuno, medieval packs,
+  Sphax, realistic packs) or purely magic: Enchanted, Mystic Twilight, Harvest Autumn, Dreamy Pastel.
 
 ## Install
 
@@ -66,7 +74,8 @@ Made first for Apple Silicon Macs (MoltenVK), and meant to work on Windows and L
 Options > **Etna Shaders...**, and **F7** turns Etna on and off in game.
 
 * **Quality** (Low, Medium, High, Ultra) sets how much work Etna does; **Look** sets the colours and the mood.
-* Pages for Lighting & Shadows, Surfaces, Sky & Air, Water, Effects and Colors fine-tune them, each option with
+* **Mood** lays a colour mood over the Look. Pages for Lighting & Shadows, Surfaces, Sky & Air, Sky Wonders, Water,
+  Effects and Colors fine-tune them, each option with
   a short description. Every change shows in the world right away.
 * Settings are saved in `config/etna.properties`.
 * A built-in benchmark times Etna on, off, and with each costly part off in turn, and writes the table to

@@ -44,6 +44,26 @@
             "width": 30,
             "height": 17
         },
+        "glow0": {
+            "width": 480,
+            "height": 270
+        },
+        "glow1": {
+            "width": 240,
+            "height": 135
+        },
+        "glow2": {
+            "width": 120,
+            "height": 68
+        },
+        "glow3": {
+            "width": 60,
+            "height": 34
+        },
+        "glow": {
+            "width": 480,
+            "height": 270
+        },
         "graded": {}
     },
     "passes": [
@@ -55,6 +75,11 @@
                     "sampler_name": "In",
                     "target": "minecraft:main",
                     "bilinear": true
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
                 }
             ],
             "output": "bloom0",
@@ -290,6 +315,90 @@
         },
         {
             "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/glow_prefilter",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main",
+                    "bilinear": true
+                }
+            ],
+            "output": "glow0"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "glow0",
+                    "bilinear": true
+                }
+            ],
+            "output": "glow1"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "glow1",
+                    "bilinear": true
+                }
+            ],
+            "output": "glow2"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/bloom_down",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "glow2",
+                    "bilinear": true
+                }
+            ],
+            "output": "glow3"
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/glow_combine",
+            "inputs": [
+                {
+                    "sampler_name": "Narrow",
+                    "target": "glow1",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Mid",
+                    "target": "glow2",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Wide",
+                    "target": "glow3",
+                    "bilinear": true
+                }
+            ],
+            "output": "glow",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
             "fragment_shader": "etna:post/final",
             "inputs": [
                 {
@@ -299,6 +408,11 @@
                 {
                     "sampler_name": "Bloom",
                     "target": "up0",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Glow",
+                    "target": "glow",
                     "bilinear": true
                 }
             ],

@@ -27,6 +27,29 @@ float etnaTorchBoost() {
     return 1.0 + 0.3 * ETNA_TORCH_WARMTH * smoothstep(12.0 / 15.0, 1.0, etnaLightLevels.x);
 }
 
+// The Nether's lava sea lights the land near it from below (EtnaAir.java: EtnaShadowFade.y is how strong,
+// in vanilla's units, 0 outside the Nether and with the Nether air setting at 0; z is the lava's surface,
+// as a world height). Faces turned down get all of it, upright walls a third, tops none; it fades by e
+// every LAVA_LIGHT_SCALE blocks above the surface, and shows only where the block light is high, which near
+// the lava sea means the lava itself (it gives off level 15): a low tunnel far from any lava stays as it is.
+// Added to the light the face gets, in the lava's orange, so the undersides of the cliffs and bridges over
+// the lava sea glow warm instead of staying the dimension's flat dark.
+const float LAVA_LIGHT_SCALE = 6.0; // blocks
+const vec3 LAVA_LIGHT_COLOR = vec3(1.0, 0.45, 0.15);
+
+vec3 etnaLavaLight(vec3 normal) {
+    #ifdef ETNA_SHADOWS
+    float strength = EtnaShadowFade.y;
+    if (strength > 0.0) {
+        float facing = clamp(0.33 - 0.67 * normal.y, 0.0, 1.0);
+        float above = max(etnaWorldPos.y - EtnaShadowFade.z, 0.0);
+        float near = exp(-above / LAVA_LIGHT_SCALE) * smoothstep(8.0 / 15.0, 13.0 / 15.0, etnaLightLevels.x);
+        return LAVA_LIGHT_COLOR * (strength * facing * near);
+    }
+    #endif
+    return vec3(0.0);
+}
+
 // Distant terrain slowly takes the colour of the air before vanilla's fog finishes the job at the
 // edge of the render distance, so the two meet without a seam. Underground the fog colour is still
 // the bright daytime air, and hazing cave walls towards it turned ravines and big caves milky at noon:

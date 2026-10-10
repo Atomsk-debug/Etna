@@ -26,6 +26,13 @@ public final class EtnaConfig {
 	/** The performance log in latest.log: none, or one summary line every few seconds. */
 	public enum Profiling { OFF, SUMMARY }
 
+	// 0.8.0 MOTES
+	/** How many fireflies and motes float around at most (EtnaMotes): none, a few, a fair number, many. */
+	public enum Fireflies { OFF, FEW, NORMAL, MANY }
+
+	/** Fireflies (Effects page): not part of the looks, it stays where it is when the look changes. */
+	public static Fireflies fireflies = Fireflies.NORMAL;
+
 	/** One adjustable number: its key in the file and menu, its range and the value it has now. */
 	public static final class Setting {
 		public final String key;
@@ -99,6 +106,89 @@ public final class EtnaConfig {
 	public static final float VISIBILITY_DEFAULT = 0.3F;
 	public static final float SUN_PATH_TILT_DEFAULT = 25.0F;
 
+	// 0.8.0 MOOD
+	/**
+	 * Colour moods laid over the Look (EtnaMood), each matched to a family of resource packs or purely magic.
+	 * Like Visibility they are not part of the Look: changing the Look keeps the mood, and the other way round.
+	 */
+	public enum Mood { NATURAL, CLEAR_DAY, TRAILER, STORYBOOK, OLD_KINGDOM, INK, LIFELIKE, ENCHANTED, MYSTIC, AUTUMN, PASTEL }
+
+	public static Mood mood = Mood.NATURAL;
+	/** How far the mood is applied: 0 is the Look alone (no dreamy glow either), 1 the full mood. */
+	public static final Setting moodStrength = new Setting("moodStrength", 0.0F, 1.0F);
+	public static final float MOOD_STRENGTH_DEFAULT = 1.0F;
+
+	static {
+		moodStrength.set(MOOD_STRENGTH_DEFAULT);
+	}
+
+	// 0.8.0 WEATHER
+	/** Rain and snow: vanilla's, or Etna's thinner rain in Etna's light and softer snow (EtnaWeather). */
+	public enum RainLook { VANILLA, ETNA }
+
+	public static RainLook rainLook = RainLook.ETNA;
+	/**
+	 * Bloom fog (EFFECTS page): how much distant scenery feeds the bloom at night, in rain, in caves and in the
+	 * Nether, so distant lights glow in the damp air (bloom_prefilter.fsh, EtnaAir.bloomFog). 0 is off.
+	 */
+	public static final Setting bloomFog = new Setting("bloomFog", 0.0F, 1.0F);
+	public static final float BLOOM_FOG_DEFAULT = 0.4F;
+	/** Nether air (SKY page): the Nether's glowing haze and lava mist, and the End's faint violet air (EtnaAir). 0 is off. */
+	public static final Setting netherAir = new Setting("netherAir", 0.0F, 1.0F);
+	public static final float NETHER_AIR_DEFAULT = 0.6F;
+
+	static {
+		bloomFog.set(BLOOM_FOG_DEFAULT);
+		netherAir.set(NETHER_AIR_DEFAULT);
+	}
+
+	/** Back to the defaults (the settings screen's Reset All); like visibility, these are not part of the looks. */
+	public static void resetWeather() {
+		rainLook = RainLook.ETNA;
+		bloomFog.set(BLOOM_FOG_DEFAULT);
+		netherAir.set(NETHER_AIR_DEFAULT);
+	}
+
+	// 0.8.0 SURFACES: the Surfaces page's materials, puddles, sparkles and glowing flowers (EtnaMaterials,
+	// terrain_surface.glsl). Like Visibility they are not part of the looks: they stay where they are when the
+	// look changes, and moving them keeps the look.
+	/** How much metals, gems, polished stone, glass and ice shine by type, and ore specks with them; 0 is 0.7.1's plain sheen. */
+	public static final Setting materials = new Setting("materials", 0.0F, 1.0F);
+	/** How much of the open ground puddles cover while it is wet (they need Shine, which makes ground wet at all). */
+	public static final Setting puddles = new Setting("puddles", 0.0F, 1.0F);
+	/** Sun and moon glints on snow, sand, ice, gems and ore specks, and torch glints on gems and ores. */
+	public static final Setting sparkles = new Setting("sparkles", 0.0F, 1.0F);
+	/** How brightly the petals and berries of plants glow at night. */
+	public static final Setting glowingFlowers = new Setting("glowingFlowers", 0.0F, 1.0F);
+	private static final float MATERIALS_DEFAULT = 0.7F;
+	private static final float PUDDLES_DEFAULT = 0.7F;
+	private static final float SPARKLES_DEFAULT = 0.6F;
+	private static final float GLOWING_FLOWERS_DEFAULT = 0.5F;
+
+	/** The Surfaces page's materials, puddles, sparkles and glowing flowers back to their defaults. */
+	public static void resetSurfaces() {
+		materials.set(MATERIALS_DEFAULT);
+		puddles.set(PUDDLES_DEFAULT);
+		sparkles.set(SPARKLES_DEFAULT);
+		glowingFlowers.set(GLOWING_FLOWERS_DEFAULT);
+	}
+
+	// 0.8.0 WATER
+	/**
+	 * Shoreline foam (Water page): a thin line of foam where water meets the shore (terrain_water.glsl). Like
+	 * Visibility it is not part of the looks: it stays where it is when the look changes.
+	 */
+	public static final Setting shoreFoam = new Setting("shoreFoam", 0.0F, 1.0F);
+	public static final float SHORE_FOAM_DEFAULT = 0.5F;
+	/** Glitter (Water page): sparkles of the sun and the moon on the waves. Not part of the looks either. */
+	public static final Setting waterGlitter = new Setting("waterGlitter", 0.0F, 1.0F);
+	public static final float WATER_GLITTER_DEFAULT = 0.5F;
+
+	static {
+		shoreFoam.set(SHORE_FOAM_DEFAULT);
+		waterGlitter.set(WATER_GLITTER_DEFAULT);
+	}
+
 	/** Every look setting, in the order profiles list their values. */
 	public static final List<Setting> LOOK = List.of(
 		brightness, contrast, saturation, vibrance, warmth, vignette, sharpen,
@@ -136,12 +226,57 @@ public final class EtnaConfig {
 	 */
 	public static boolean shadowGather = true;
 
+	// 0.8.0 SKY
+	/** The night sky's stars (EtnaSky): none, stars, stars with the Milky Way, or the Milky Way with nebula colours. */
+	public enum NightSky { OFF, STARS, MILKY_WAY, NEBULA }
+
+	/** When the aurora shows on clear nights: never, over cold biomes, also under a full moon, or every night. */
+	public enum Aurora { OFF, COLD, COLD_FULL_MOON, EVERY_NIGHT }
+
+	/** How often a shooting star crosses the night sky. */
+	public enum ShootingStars { OFF, RARE, FREQUENT }
+
+	/** When a rainbow can stand opposite a low sun: never, just after rain, or on any clear morning and evening. */
+	public enum Rainbows { OFF, AFTER_RAIN, ALWAYS }
+
+	public static NightSky nightSky = NightSky.MILKY_WAY;
+	public static Aurora aurora = Aurora.COLD_FULL_MOON;
+	public static ShootingStars shootingStars = ShootingStars.RARE;
+	public static Rainbows rainbows = Rainbows.AFTER_RAIN;
+	/** Etna draws a round moon with its phase (and a halo on cold clear nights) in place of vanilla's square one. */
+	public static boolean roundMoon = true;
+	/** Etna draws the End's sky (a violet nebula, small dense stars and the flash) in place of vanilla's box. */
+	public static boolean endSky = true;
+	/**
+	 * How far the sky's air takes the biome's own sky colour (vanilla's: more turquoise over deserts, more lavender over snow): 0 is
+	 * Etna's one sky everywhere. Like visibility, it is not part of the looks.
+	 */
+	public static final Setting biomeSkyColor = new Setting("biomeSkyColor", 0.0F, 1.0F);
+	public static final float BIOME_SKY_COLOR_DEFAULT = 0.5F;
+
+	static {
+		resetSky();
+	}
+
+	/** The SKY settings back to their defaults (the settings screen's Reset All). */
+	public static void resetSky() {
+		nightSky = NightSky.MILKY_WAY;
+		aurora = Aurora.COLD_FULL_MOON;
+		shootingStars = ShootingStars.RARE;
+		rainbows = Rainbows.AFTER_RAIN;
+		roundMoon = true;
+		endSky = true;
+		biomeSkyColor.set(BIOME_SKY_COLOR_DEFAULT);
+	}
+	// end 0.8.0 SKY
+
 	private static boolean loaded;
 
 	static {
 		applyProfile(Profile.NATURAL);
 		applyQuality(Quality.HIGH);
 		visibility.set(VISIBILITY_DEFAULT);
+		resetSurfaces();
 	}
 
 	/**
@@ -262,9 +397,26 @@ public final class EtnaConfig {
 		halfResolution = bool(props, "halfResolution", false);
 		sunPathTilt = number(props, "sunPathTilt", SUN_PATH_TILT_DEFAULT, 0.0F, 45.0F);
 		visibility.set(number(props, "visibility", VISIBILITY_DEFAULT, visibility.min, visibility.max));
+		// 0.8.0 MOOD
+		mood = choice(props, "mood", Mood.NATURAL);
+		moodStrength.set(number(props, moodStrength.key, MOOD_STRENGTH_DEFAULT, moodStrength.min, moodStrength.max));
+		// 0.8.0 WEATHER
+		rainLook = choice(props, "rainLook", RainLook.ETNA);
+		bloomFog.set(number(props, bloomFog.key, BLOOM_FOG_DEFAULT, bloomFog.min, bloomFog.max));
+		netherAir.set(number(props, netherAir.key, NETHER_AIR_DEFAULT, netherAir.min, netherAir.max));
+		// 0.8.0 SURFACES
+		materials.set(number(props, materials.key, MATERIALS_DEFAULT, materials.min, materials.max));
+		puddles.set(number(props, puddles.key, PUDDLES_DEFAULT, puddles.min, puddles.max));
+		sparkles.set(number(props, sparkles.key, SPARKLES_DEFAULT, sparkles.min, sparkles.max));
+		glowingFlowers.set(number(props, glowingFlowers.key, GLOWING_FLOWERS_DEFAULT, glowingFlowers.min, glowingFlowers.max));
+		// 0.8.0 WATER
+		shoreFoam.set(number(props, shoreFoam.key, SHORE_FOAM_DEFAULT, shoreFoam.min, shoreFoam.max));
+		waterGlitter.set(number(props, waterGlitter.key, WATER_GLITTER_DEFAULT, waterGlitter.min, waterGlitter.max));
 		profiling = choice(props, "profiling", Profiling.OFF);
 		shadowCulling = bool(props, "shadowCulling", true);
 		shadowGather = bool(props, "shadowGather", true);
+		// 0.8.0 MOTES
+		fireflies = choice(props, "fireflies", Fireflies.NORMAL);
 		applyQuality(choice(props, "quality", Quality.HIGH));
 		if (quality == Quality.CUSTOM) {
 			shadows = bool(props, "shadows", true);
@@ -278,6 +430,14 @@ public final class EtnaConfig {
 				setting.set(number(props, setting.key, setting.value, setting.min, setting.max));
 			}
 		}
+		// 0.8.0 SKY
+		nightSky = choice(props, "nightSky", NightSky.MILKY_WAY);
+		aurora = choice(props, "aurora", Aurora.COLD_FULL_MOON);
+		shootingStars = choice(props, "shootingStars", ShootingStars.RARE);
+		rainbows = choice(props, "rainbows", Rainbows.AFTER_RAIN);
+		roundMoon = bool(props, "roundMoon", true);
+		endSky = bool(props, "endSky", true);
+		biomeSkyColor.set(number(props, "biomeSkyColor", BIOME_SKY_COLOR_DEFAULT, biomeSkyColor.min, biomeSkyColor.max));
 	}
 
 	/** For code that can run before the client entrypoint (the window is created very early). */
@@ -295,9 +455,25 @@ public final class EtnaConfig {
 		props.setProperty("halfResolution", Boolean.toString(halfResolution));
 		props.setProperty("sunPathTilt", Float.toString(sunPathTilt));
 		props.setProperty("visibility", Float.toString(visibility.value));
+		// 0.8.0 MOOD
+		props.setProperty("mood", mood.name().toLowerCase(Locale.ROOT));
+		props.setProperty(moodStrength.key, Float.toString(moodStrength.value));
+		// 0.8.0 WEATHER
+		props.setProperty("rainLook", rainLook.name().toLowerCase(Locale.ROOT));
+		props.setProperty(bloomFog.key, Float.toString(bloomFog.value));
+		props.setProperty(netherAir.key, Float.toString(netherAir.value));
+		// 0.8.0 SURFACES
+		for (Setting setting : List.of(materials, puddles, sparkles, glowingFlowers)) {
+			props.setProperty(setting.key, Float.toString(setting.value));
+		}
+		// 0.8.0 WATER
+		props.setProperty(shoreFoam.key, Float.toString(shoreFoam.value));
+		props.setProperty(waterGlitter.key, Float.toString(waterGlitter.value));
 		props.setProperty("profiling", profiling.name().toLowerCase(Locale.ROOT));
 		props.setProperty("shadowCulling", Boolean.toString(shadowCulling));
 		props.setProperty("shadowGather", Boolean.toString(shadowGather));
+		// 0.8.0 MOTES
+		props.setProperty("fireflies", fireflies.name().toLowerCase(Locale.ROOT));
 		props.setProperty("quality", quality.name().toLowerCase(Locale.ROOT));
 		props.setProperty("shadows", Boolean.toString(shadows));
 		props.setProperty("shadowResolution", Integer.toString(shadowResolution));
@@ -307,6 +483,15 @@ public final class EtnaConfig {
 		for (Setting setting : LOOK) {
 			props.setProperty(setting.key, Float.toString(setting.value));
 		}
+		// 0.8.0 SKY: nightSky off | stars | milky_way | nebula, aurora off | cold | cold_full_moon | every_night,
+		// shootingStars off | rare | frequent, rainbows off | after_rain | always, biomeSkyColor 0 .. 1.
+		props.setProperty("nightSky", nightSky.name().toLowerCase(Locale.ROOT));
+		props.setProperty("aurora", aurora.name().toLowerCase(Locale.ROOT));
+		props.setProperty("shootingStars", shootingStars.name().toLowerCase(Locale.ROOT));
+		props.setProperty("rainbows", rainbows.name().toLowerCase(Locale.ROOT));
+		props.setProperty("roundMoon", Boolean.toString(roundMoon));
+		props.setProperty("endSky", Boolean.toString(endSky));
+		props.setProperty("biomeSkyColor", Float.toString(biomeSkyColor.value));
 		try (Writer writer = Files.newBufferedWriter(file())) {
 			props.store(writer, "Etna shaders. quality: low | medium | high | ultra | custom (shadows, shadowResolution,"
 				+ " shadowDistance and antiAliasing are only read back with quality=custom). profile: natural | soft | vivid"
@@ -318,7 +503,14 @@ public final class EtnaConfig {
 				+ " latest.log every few seconds). shadowCulling: true | false (false draws every shadow caster, to compare)."
 				+ " shadowGather: true | false (false reads the shadow map one texel at a time, as before 0.6.0; applies after"
 				+ " a restart). cloudShadows: 0 .. 1, how much a cloud overhead dims the sun on the land (0: no cloud shadows)."
-				+ " mist: 0 .. 1, ground and valley mist, night and rain haze, cave murk (0: off)");
+				+ " mist: 0 .. 1, ground and valley mist, night and rain haze, cave murk (0: off). mood: natural | clear_day | trailer"
+				+ " | storybook | old_kingdom | ink | lifelike | enchanted | mystic | autumn | pastel, kept whatever the profile."
+				+ " moodStrength: 0 .. 1 (0: the look alone). fireflies: off | few | normal"
+				+ " | many, how many fireflies and motes float around at most, kept whatever the profile."
+				+ " rainLook: vanilla | etna. bloomFog: 0 .. 1, distant glow at night, in rain, in caves and in the Nether (0: off)."
+				+ " netherAir: 0 .. 1, the Nether's haze and lava mist and the End's violet air (0: off); all three kept whatever the profile."
+				+ " materials, puddles, sparkles, glowingFlowers: 0 .. 1 (0: off), kept whatever the profile."
+				+ " shoreFoam, waterGlitter: 0 .. 1, foam along the shore and sparkles on the waves (0: off), kept whatever the profile");
 		} catch (IOException e) {
 			EtnaClient.LOGGER.warn("Etna: could not save config", e);
 		}

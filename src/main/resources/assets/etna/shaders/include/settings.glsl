@@ -12,16 +12,28 @@ layout(std140) uniform EtnaSettings {
     vec4 Frame;        // x: frame counter, y/z: this frame's sub-pixel jitter in pixels, w: 1 when temporal anti-aliasing is on
     vec4 Color;        // x: brightness, y: contrast, z: saturation, w: vibrance
     vec4 Color2;       // x: warmth (-1 cool .. 1 warm), y: visibility (0 .. 1, the final pass's lift of the darkest tones; 0 with Etna off), z: vignette, w: sharpening
-    vec4 Glow;         // x: bloom strength, y: unused, z: bloom size, w: unused
+    vec4 Glow;         // x: bloom strength, y: bloom fog, how much distant scenery feeds the bloom (the setting times the amount for night, rain, caves, the Nether; EtnaAir.bloomFog), z: bloom size, w: one over the distance in blocks over which the bloom fog builds up
     vec4 Shade;        // x: ambient occlusion strength, yzw: colour of the skylight (luma 1) while Etna draws the sky (EtnaSky.java), else 0
     vec4 Sun;          // xyz: direction towards the sun (below the horizon at night), w: strength of the light casting shadows (0 at dusk, in rain, without a sun)
     vec4 Air;          // x: sky glow, y: atmosphere, z: rain (0 .. 1), w: 0 without a sun (Nether, End), 1 by day, 2 when the moon is the light
     vec4 Water;        // x: what the camera is in (0 air, 1 water, 2 lava, 3 powder snow), y: water vision (0 .. 1), z: height of the water surface above the camera in blocks, w: how far you see under water, in blocks (0 when vanilla's fog is kept: Etna off, out of water, Blindness, Darkness, boss fog); y and z are 0 out of water
     vec4 Eye;          // eye adaptation (EtnaEye.java). x: light reaching the eye, eased (0 dark .. 1 daylight), y: exposure the final pass multiplies scene light by (1 leaves it), z: night vision (0 .. 1, how far dim colours fade to a cool grey), w: 0
-    vec4 Mist;         // 352. densities of the air per block (air.glsl): x: ground and valley mist at its base, y: night and rain haze at sea level, z: murk deep underground; w: height of the camera above sea level, in blocks. All 0 without a sun, under Blindness and Darkness
-    vec4 MistColor;    // 368. rgb: the colour of the mist (vanilla's fog colour), w: the render distance in blocks
+    vec4 Mist;         // 352. densities of the air per block (air.glsl): x: ground and valley mist at its base, y: night and rain haze at sea level, z: murk deep underground; w: height of the camera above sea level, in blocks. All 0 under Blindness and Darkness. Without a sun (Air.w 0; EtnaAir.sunless): x: the Nether's lava mist at the lava sea's surface, y: the Nether's or the End's haze, z: 0, w: height of the camera above the lava sea's surface
+    vec4 MistColor;    // 368. rgb: the colour of the mist (vanilla's fog colour), w: the render distance in blocks. Without a sun: rgb the haze's glow, w the distance vanilla's fog ends at
     vec4 Shafts;       // 384. x: density of the clear air the light shafts show in, per block, y: how much of the sky above the camera is covered (0 open .. 1 under trees or a roof), z: how deep underground the camera is (0 open air .. 1 a cave), w: the shadow map's radius in blocks when the shafts pass can march it this frame, else 0
-    vec4 AirSun;       // 400. rgb: colour of the direct light as the terrain gets it from Etna's sky model (the sun's, or the moon's at night; luma 1), w: 1 while the model has one, else 0 (all 0)
+    vec4 AirSun;       // 400. rgb: colour of the direct light as the terrain gets it from Etna's sky model (the sun's, or the moon's at night; luma 1), w: 1 while the model has one, else 0 (all 0). Without a sun: rgb the lava mist's glow, w 0
+    // 416-495 and 528-575: the mood filter (EtnaMood.java, grade.glsl), already blended by Mood Strength; every
+    // component is neutral (leaves the picture) at 0 strength. Tints have luminance 1.
+    vec4 Mood0;        // 416. xyz: the mood's exposure times its white balance (per-channel gains), w: its contrast - 1 (scales log luminance around mid grey)
+    vec4 Mood1;        // 432. x: saturation (OkLab chroma, 1 leaves), y: vibrance (0 .. 1), z: highlight softness (0 .. 1), w: added to the vignette
+    vec4 Mood2;        // 448. xyz: shadow tint as strength * (tint - 1), w: dreamy glow amount (0 .. 1)
+    vec4 Mood3;        // 464. xyz: highlight tint as strength * (tint - 1), w: dreamy glow radius (0: the mid blur level .. 1: the wide one)
+    vec4 Mood4;        // 480. xyz: black lift, the display level black comes out at (0 none), w: halation amount (0 .. 1)
+    vec4 Motes;        // 496. x: how many fireflies and motes the last world pass draws this frame (EtnaMotes.java; 0 with none, Etna off or the setting off, and the pass skips them), yzw: 0
+    vec4 WaterSsr;     // 512. the water's reflections of the world (EtnaWaterSsr.java). x: their strength, the water reflections setting (0: off, also with improved transparency, which leaves no water mask), y: the clock the water's waves run on, in seconds (vanilla's GameTime * 1200, 0 .. 1200), z/w: the camera's world x and z, in blocks
+    vec4 Mood5;        // 528. xyz: bloom and dreamy glow tint (1 leaves), w: ink outline strength (0 none; drawn by the world pass)
+    vec4 Mood6;        // 544. hue shifts by colour band (radians, OkLab hue) and chroma - 1: x: greens shift, y: greens chroma, z: blues shift, w: blues chroma
+    vec4 Mood7;        // 560. x: warm band (wood, earth, torchlight) shift, y: warm band chroma, z: 1 when saturation, vibrance or a band has work, else 0, w: 0
 };
 
 const vec3 ETNA_LUMA = vec3(0.2126, 0.7152, 0.0722);

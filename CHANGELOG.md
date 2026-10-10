@@ -2,6 +2,18 @@
 
 Every release is for Minecraft 26.4-snapshot-3 with Fabric. Versions: the middle number goes up for new features, the last one for fixes. Jars are on the [Releases](https://github.com/Atomsk-debug/Etna/releases) page.
 
+## 0.8.0 (2026-10-10), "Enchanted"
+
+Magic, and closing the gap with the most popular shader packs. Every new effect has its own setting, none of them is part of the Look, and with Etna off none of them is left.
+
+* **Moods** (new Mood page): eleven colour moods laid over the Look, each made for a family of resource packs or purely magic. Natural (default, Etna's own look with a faint dreamy glow), Clear Day (Faithful, Stay True and other vanilla-like packs), Trailer (Bare Bones and flat packs), Storybook (Mizuno's 16 Craft and cottagecore packs), Old Kingdom (medieval packs), Ink & Colour (Sphax PureBDcraft and cartoon packs, with ink outlines), Lifelike (realistic PBR packs), and the magic Enchanted, Mystic Twilight, Harvest Autumn and Dreamy Pastel. A Mood Strength slider blends any of them with the plain Look. The dreamy glow only ever adds light, so textures stay sharp. Etna does not come with its own resource pack: moods suit the packs people already use.
+* **Night sky** (new Sky Wonders page): the Milky Way with dark dust lanes, turning with the stars (Nebula Colors adds faint rose and teal), aurora curtains over cold biomes and under a full moon, which also tint the land faintly green, rare shooting stars, a faint double rainbow after rain when the sun is low, a round moon lit by its phase with a halo on cold clear nights, and a violet End sky with a drifting nebula. By day the sky leans gently towards each biome's own colour (Biome Sky Color, Sky & Air page).
+* **Fireflies and motes** (Effects page): fireflies over grass and flowers from dusk to dawn on dry nights, more by firefly bushes and water; pale motes in the Pale Garden, spores in lush caves, soul wisps over soul sand, motes in the End. They never smear and cost nothing by day.
+* **Water reflections of the world**: lakes, rivers and the sea now mirror the shore, hills, trees and buildings with ripples, not only the sky. Plus a thin, slowly drifting line of foam along the shore and sparkles of the sun and the moon on the waves (Water page: Shoreline Foam, Glitter).
+* **Materials** (Surfaces page): metals mirror the sky tinted by their colour, gems sparkle, polished stone, glass and ice catch the light, ore specks glint as you pass with a torch, redstone and amethyst glow softly, and flowers glow faintly at night. Puddles form on open ground in rain, with rings that never pop; snow, sand and ice sparkle in the sun. Blocks are recognised by name, so it works with any resource pack.
+* **Weather and the Nether**: thinner rain that takes the sky's colour and glows warm near torches, softer snow, both leaning with the wind. The Nether gets a glowing haze in each biome's colour, a low mist over the lava sea and warm lava light on the rock above it. Distant lights glow softly at night, in rain, in caves and in the Nether (Bloom Fog, Effects page).
+* The settings menu has nine pages now: long pages scroll with the mouse wheel, and the page tabs close up on small screens.
+
 ## 0.7.1 (2026-10-10)
 
 Fixes, better waving and one new slider; the look is otherwise 0.7.0's.

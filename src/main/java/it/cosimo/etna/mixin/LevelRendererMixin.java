@@ -4,6 +4,7 @@ import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import it.cosimo.etna.EtnaGpuTimer;
 import it.cosimo.etna.EtnaLook;
+import it.cosimo.etna.EtnaMotes;
 import it.cosimo.etna.EtnaShadows;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
@@ -20,7 +21,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * prepares its own draws, which write into the same per-frame chunk buffers; running after vanilla's
  * could grow those buffers and close the ones vanilla's draws still point at (a crash on respawn,
  * when many sections become visible at once). The live settings for the post effect are uploaded here
- * too: it is a point every frame passes with no render pass open. Each injection tells the shadow pass which of vanilla's
+ * too, after the fireflies (EtnaMotes), whose count they carry: it is a point every frame passes with no render
+ * pass open. Each injection tells the shadow pass which of vanilla's
  * two ways of preparing the draws is in use, so it prepares its own the same way. The GPU timer brackets
  * the shadow pass here too, as its timestamps must sit outside any render pass (only while the performance
  * log or the benchmark runs; otherwise each mark is one static check).
@@ -49,6 +51,7 @@ public abstract class LevelRendererMixin {
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_START);
 		EtnaShadows.prepareFrame((LevelRenderer) (Object) this, levelRenderState, fogBuffer, true);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_END);
+		EtnaMotes.upload(levelRenderState);
 		EtnaLook.upload();
 	}
 
@@ -70,6 +73,7 @@ public abstract class LevelRendererMixin {
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_START);
 		EtnaShadows.prepareFrame((LevelRenderer) (Object) this, levelRenderState, fogBuffer, false);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_END);
+		EtnaMotes.upload(levelRenderState);
 		EtnaLook.upload();
 	}
 }

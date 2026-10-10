@@ -3,9 +3,9 @@
 Minecraft's own preprocessor is mimicked: `#include <namespace:file.glsl>` is resolved from
 assets/<namespace>/shaders/include, falling back to a copy of the vanilla includes, and defines are
 injected after the #version/#extension lines. Etna's core shaders (assets/etna/shaders/core) are compiled
-with every define combination the game builds them with: terrain and clouds with those of the vanilla
-pipelines Etna copies onto them (terrain has many; clouds vanilla's two and Etna's lit copy), the sky with
-the base defines; each with both depth conventions. In each combination the vertex outputs are checked
+with every define combination the game builds them with: terrain, clouds and weather with those of the
+vanilla pipelines Etna copies onto them (terrain has many; clouds vanilla's two and Etna's lit copy; weather
+vanilla's and the Improved Transparency stages), the sky with the base defines; each with both depth conventions. In each combination the vertex outputs are checked
 against the fragment inputs, after glslang's own preprocessor has resolved the #ifdefs.
 
 Etna never overrides vanilla's own assets (assets/minecraft): with Etna off the game must look exactly as
@@ -94,9 +94,17 @@ TERRAIN_VARIANTS = [
 DEPTH_VARIANTS = [{}, {"RENDERPEARL_DEPTH_IS_ZERO_TO_ONE": ""}]
 # Vanilla's cloud pipelines (fancy and fast) and Etna's lit copies of them (EtnaClouds.java).
 CLOUDS_VARIANTS = [{}, {"ETNA_CLOUD_LIGHT": ""}]
-# Define sets each of Etna's core shaders is built with: terrain and clouds take the defines of the vanilla
-# pipelines Etna copies onto them (EtnaShadows.copy); any other is built with no defines of its own.
-CORE_VARIANTS = {"terrain": TERRAIN_VARIANTS, "clouds": CLOUDS_VARIANTS}
+# Etna's copies of vanilla's weather pipelines (EtnaWeather.java): rain and snow drawn straight into the world,
+# and the three Improved Transparency stages they go through otherwise.
+WEATHER_VARIANTS = [
+    {},
+    {"OIT": "", "OIT_ACCUMULATE": ""},
+    {"OIT": "", "OIT_ALPHA_ONLY": "", "OIT_TRANSMITTANCE": ""},
+    {"OIT": "", "OIT_ALPHA_ONLY": "", "OIT_DEPTH_BOUNDS": ""},
+]
+# Define sets each of Etna's core shaders is built with: terrain, clouds and weather take the defines of the
+# vanilla pipelines Etna copies onto them (EtnaShadows.copy); any other is built with no defines of its own.
+CORE_VARIANTS = {"terrain": TERRAIN_VARIANTS, "clouds": CLOUDS_VARIANTS, "weather": WEATHER_VARIANTS}
 
 
 def vanilla_dir():
