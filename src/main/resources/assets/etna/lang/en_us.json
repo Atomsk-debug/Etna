@@ -118,7 +118,7 @@
 	"etna.options.profiling.desc": "Summary writes a line to latest.log every few seconds while you play: frame rate, frame time and where it goes, on the CPU and on the GPU (timed on one frame in eight, so the frame rate stays the normal one). Off writes nothing.",
 	"etna.options.profiling.summary": "Summary",
 	"etna.options.benchmark": "Run benchmark",
-	"etna.options.benchmark.desc": "Takes about 100 seconds, in a world: Etna tries its settings one at a time, writes what each one costs to latest.log, then puts everything back as it was. Stand still and don't move the mouse: a step disturbed by a camera move or a stutter is measured again, which can add up to about 20 seconds. Turn any frame-rate limiter mod and VSync off first.",
+	"etna.options.benchmark.desc": "Takes about 130 seconds, in a world: Etna tries its settings one at a time, writes what each one costs to latest.log, then puts everything back as it was. Stand still and don't move the mouse: a step disturbed by a camera move or a stutter is measured again, which can add up to about 20 seconds. Turn any frame-rate limiter mod and VSync off first.",
 	"etna.benchmark.start": "Etna benchmark: stand still and don't move the mouse for about %s s; turn the frame-rate limiter mod off first.",
 	"etna.benchmark.done": "Etna benchmark finished: the results are in latest.log.",
 	"etna.benchmark.unavailable": "Etna benchmark can't run: the performance log stopped after an error earlier in this session (see latest.log). Restart the game to try again.",

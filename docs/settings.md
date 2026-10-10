@@ -24,7 +24,7 @@ Start here. Quality sets how much work Etna does, Look sets the colours and mood
 * **Visibility**: How well you see in the dark, without making bright places brighter: caves get more of their faint light (with Cave Light on), sun and moon shadows get lighter, your eyes open up further in dark places (with Eye Adaptation on) and the darkest tones are lifted. Bright skies, snow and sunlit ground stay as they are. 0% (Off) is Etna 0.7.0's darkness. It stays where you put it when you change the Look.
 * **Resolution** *(macOS only)*: Half draws a quarter of the pixels and lets macOS scale the picture up: much faster, but blurry. Applies after restarting the game, and only when Etna is on as the game starts.
 * **Performance log**: Summary writes a line to latest.log every few seconds while you play: frame rate, frame time and where it goes, on the CPU and on the GPU (timed on one frame in eight, so the frame rate stays the normal one). Off writes nothing.
-* **Run benchmark**: Takes about 100 seconds, in a world: Etna tries its settings one at a time, writes what each one costs to latest.log, then puts everything back as it was. Stand still and don't move the mouse: a step disturbed by a camera move or a stutter is measured again, which can add up to about 20 seconds. Turn any frame-rate limiter mod and VSync off first.
+* **Run benchmark**: Takes about 130 seconds, in a world: Etna tries its settings one at a time, writes what each one costs to latest.log, then puts everything back as it was. Stand still and don't move the mouse: a step disturbed by a camera move or a stutter is measured again, which can add up to about 20 seconds. Turn any frame-rate limiter mod and VSync off first.
 
 ## Mood
 
