@@ -16,6 +16,8 @@ import com.mojang.renderpearl.api.commands.RenderPass;
 import com.mojang.renderpearl.api.pipeline.BindGroupLayout;
 import com.mojang.renderpearl.api.pipeline.ColorTargetState;
 import com.mojang.renderpearl.api.pipeline.UniformType;
+import com.mojang.renderpearl.api.textures.FilterMode;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -23,11 +25,13 @@ import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.client.renderer.state.level.SkyRenderState;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.material.FogType;
 import org.joml.Matrix3f;
 import org.joml.Vector3f;
+import org.joml.Vector3fc;
 import org.joml.Vector4f;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
@@ -36,10 +40,17 @@ import org.lwjgl.system.MemoryStack;
  * Etna's sky: in the overworld, with the camera in the open air, vanilla's sky disc, sunrise band, sun and
  * stars are replaced by one triangle over the screen that paints the sky from Etna's sky model
  * (assets/etna/shaders/core/sky.*, include/sky.glsl): the sky's gradient and colours for the sun's height,
- * the weather and the moon, the sun's disc and hashed stars. Vanilla's moon (its phases are in its texture)
- * and the sky occluder below the horizon stay. SkyRendererMixin hooks it in; vanilla's own sky draws
- * whenever Etna is off (F7), in the Nether and the End, under water, in lava and powder snow, under
- * Blindness or Darkness, in a boss's fog, or if the sky pipeline fails to compile.
+ * the weather and the moon, the sun's disc, and the night sky's wonders (the Wonders settings page): hashed
+ * stars, the Milky Way with its dust lanes, rare shooting stars, the aurora over cold biomes, a round moon
+ * drawn with its phase (in place of vanilla's, which stands down while Round Moon is on) with a halo on
+ * cold clear nights, and rainbows after rain. The sky occluder below the horizon stays vanilla's. In the
+ * End, the same triangle paints Etna's End sky (a violet nebula, small dense stars and the End's flash)
+ * in place of vanilla's box. SkyRendererMixin hooks it in; vanilla's own sky draws whenever Etna is off
+ * (F7), in the Nether, under water, in lava and powder snow, under Blindness or Darkness, in a boss's fog
+ * (the overworld), with the End Sky setting off, or if the sky pipeline fails to compile.
+ *
+ * The sky's details come from a small tiling noise texture (assets/etna/textures/environment/sky_noise.png,
+ * made by tools/gen_sky_noise.py): one bilinear read in place of an octave of noise worked out per pixel.
  *
  * The same model, ported to Java (EtnaSkyModel), works out once a frame what the rest of Etna needs: the
  * colours of the sunlight and the skylight for the terrain, the per-frame part of the sky the terrain
@@ -54,15 +65,58 @@ import org.lwjgl.system.MemoryStack;
 public final class EtnaSky {
 	public static final BindGroupLayout LAYOUT = BindGroupLayout.builder()
 		.withUniform("EtnaSky", UniformType.UNIFORM_BUFFER)
+		.withUniform("EtnaSkyNoise", UniformType.COMBINED_IMAGE_SAMPLER)
 		.build();
-	/** std140: six vec4s, the EtnaSky block in assets/etna/shaders/include/sky_ubo.glsl. */
-	private static final int UBO_SIZE = 6 * 16;
+	/** std140: thirteen vec4s, the EtnaSky block in assets/etna/shaders/include/sky_ubo.glsl. */
+	private static final int UBO_SIZE = 13 * 16;
 	// Same flags vanilla uses for its projection UBO: uniform buffer, writable by the encoder.
 	private static final int UBO_USAGE = 136;
 	/** The sky's horizon straight ahead sets vanilla's fog colour: this far up (about 2 degrees). */
 	private static final float FOG_ELEVATION = 0.035F;
 	/** The moon's brightness by MoonPhase.index(): full, waning gibbous ... new ... waxing gibbous. */
 	private static final float[] MOON_PHASE_LIGHT = {1.0F, 0.8F, 0.55F, 0.3F, 0.12F, 0.3F, 0.55F, 0.8F};
+	/** The sky's noise, four independent tiling channels (tools/gen_sky_noise.py). */
+	private static final Identifier NOISE = Identifier.fromNamespaceAndPath(EtnaClient.MOD_ID, "textures/environment/sky_noise.png");
+	/** The longest frame step the eases below take, in seconds, so a hitch doesn't jump them. */
+	private static final float MAX_STEP = 0.25F;
+	/**
+	 * How cold the camera's biome is, from its base temperature: fully cold at COLD_FULL and below (snowy
+	 * plains and ice spikes are 0, snowy taiga -0.5, frozen peaks -0.7), not at all from COLD_NONE up
+	 * (old growth pine taiga 0.3, plains 0.8); taiga (0.25) is a little cold. It eases over about 8 seconds
+	 * (three time constants), so walking out of a snowy biome fades the aurora instead of cutting it.
+	 */
+	private static final float COLD_FULL = -0.05F;
+	private static final float COLD_NONE = 0.35F;
+	private static final float COLD_EASE = 8.0F / 3.0F;
+	/** The aurora's own ease (time constant, seconds), over the day's turn and the weather. */
+	private static final float AURORA_EASE = 2.0F;
+	/** A full moon brings this much aurora to biomes that aren't cold (Aurora: Cold Biomes and Full Moon). */
+	private static final float FULL_MOON_AURORA = 0.6F;
+	/** The aurora's light on the land, luma 1: its green with a little of its violet (EtnaNight.rgb). */
+	private static final float[] AURORA_LAND = {0.31F, 1.23F, 0.80F};
+	/** How long the sky remembers a rain for its rainbow: the memory falls to a third in this many seconds. */
+	private static final float RAIN_MEMORY = 100.0F;
+	/** The strongest rainbow (SkyRainbow.x), just after the rain with the sun low: subtle, never a cartoon. */
+	private static final float RAINBOW_MAX = 0.85F;
+	/**
+	 * Shooting stars by the setting (Off, Rare, Frequent): seconds between chances and the chance each
+	 * time, about one every two minutes or one every 24 seconds. Both periods divide the hour the sky's
+	 * clock wraps at, so the wrap never cuts one short.
+	 */
+	private static final float[] SHOOT_PERIOD = {0.0F, 40.0F, 12.0F};
+	private static final float[] SHOOT_CHANCE = {0.0F, 0.3F, 0.5F};
+	/**
+	 * Biome Sky Colour: vanilla's sky colour for the biome (SkyRenderState.skyColor) against its plains sky
+	 * (0x78A7FF), both linear and luma 1, raised to the setting times TINT_GAIN, tints the sunlit air. Each
+	 * channel stays within TINT_LIMIT of 1, and a paler biome sky leans less, so a grey one (the pale
+	 * garden) leaves Etna's blue alone instead of turning it peach: a multiplier can't take colour out.
+	 * Biome edges are blended by vanilla's probe and eased here over about 3 seconds (TINT_EASE is the
+	 * time constant).
+	 */
+	private static final float TINT_GAIN = 0.6F;
+	private static final float TINT_LIMIT = 0.15F;
+	private static final float TINT_EASE = 1.0F;
+	private static final float[] PLAINS_SKY = linearHue(0x78 / 255.0F, 0xA7 / 255.0F, 0xFF / 255.0F, new float[3]);
 
 	private static final EtnaSkyModel.Frame frame = new EtnaSkyModel.Frame();
 	private static final float[] sun = new float[3];
@@ -86,10 +140,35 @@ public final class EtnaSky {
 	private static boolean drawSky;
 	/** Inside SkyRenderer.render while Etna's sky replaces vanilla's. */
 	private static boolean replacing;
+	/** Etna draws the End sky this frame (decided in beforeFogUpload, as drawSky). */
+	private static boolean drawEnd;
+	/** Inside SkyRenderer.render while Etna's End sky replaces vanilla's. */
+	private static boolean replacingEnd;
+
+	// The night sky's state, eased from frame to frame (render thread only).
+	private static long lastNanos;
+	/** The level the eases below were for: another one (a new world, another dimension) starts them afresh. */
+	private static int levelId;
+	private static float coldness;
+	/** The camera's biome temperature couldn't be read: no biome is cold for the rest of the session. */
+	private static boolean coldBroken;
+	/** Vanilla's sky colour for the biome, linear and luma 1, as of the last clear day; plains until then. */
+	private static final float[] biomeHue = PLAINS_SKY.clone();
+	private static final float[] biomeScratch = new float[3];
+	private static final float[] tint = {1.0F, 1.0F, 1.0F};
+	private static final float[] tintTarget = new float[3];
+	private static float rainMemory;
+	private static float aurora;
+	private static float rainbow;
+	/** The moon's phase as an angle (SkyMoonLook.y): 0 full, pi new. */
+	private static float moonPhase;
+	/** Towards the End's flash, and its strength (SkyEnd). */
+	private static final Vector4f endFlash = new Vector4f();
 
 	private static @Nullable RenderPipeline pipeline;
 	private static @Nullable RenderPipeline pipelineWithDepth;
 	private static @Nullable GpuBuffer ubo;
+	private static @Nullable GpuTextureView noise;
 	/** The model failed: vanilla's sky and 0.6.0's light colours for the rest of the session. */
 	private static boolean failed;
 	/** Only the sky's drawing failed (its pipeline or its block): the model still lights the land. */
@@ -120,15 +199,18 @@ public final class EtnaSky {
 	public static void beforeFogUpload(LevelRenderState state) {
 		modelReady = false;
 		drawSky = false;
+		drawEnd = false;
 		if (!EtnaConfig.enabled || failed) {
 			return;
 		}
 		try {
 			update(state);
+			updateEnd(state);
 		} catch (RuntimeException e) {
 			failed = true;
 			modelReady = false;
 			drawSky = false;
+			drawEnd = false;
 			EtnaClient.LOGGER.error("Etna: the sky failed, vanilla's sky is back for this session", e);
 		}
 	}
@@ -157,8 +239,16 @@ public final class EtnaSky {
 		moon[1] = scratch.y;
 		moon[2] = scratch.z;
 		stars.identity().rotateX(tilt()).rotateY((float) (-Math.PI / 2.0)).rotateX(sky.starAngle);
+		updateNight(sky, level, state.cameraRenderState.blockPos, rain);
 
 		EtnaSkyModel.frame(frame, sun, moon, weather, moonLight, glow);
+		// The biome's tint on the sunlit air, as sky.vsh tints the shader's own frame: the land's skylight,
+		// its distant fog and vanilla's fog colour all follow it.
+		for (int k = 0; k < 3; k++) {
+			frame.sunLow[k] *= tint[k];
+			frame.sunHigh[k] *= tint[k];
+			frame.multi[k] *= tint[k];
+		}
 		if (sun[1] >= 0.0F) {
 			EtnaSkyModel.sunlight(sun[1], sunlight);
 		} else {
@@ -209,6 +299,159 @@ public final class EtnaSky {
 		}
 	}
 
+	/**
+	 * The night sky's wonders for this frame, once the sun, the moon and the weather are known: how cold the
+	 * camera's biome is, the biome's tint, the rain's memory, and from them the aurora and the rainbow.
+	 */
+	private static void updateNight(SkyRenderState sky, @Nullable ClientLevel level, BlockPos camera, float rain) {
+		long now = System.nanoTime();
+		float step = lastNanos == 0L ? 0.0F : Math.clamp((now - lastNanos) / 1.0e9F, 0.0F, MAX_STEP);
+		lastNanos = now;
+		if (Minecraft.getInstance().isPaused()) {
+			step = 0.0F;
+		}
+		int id = System.identityHashCode(level);
+		boolean snap = id != levelId;
+		levelId = id;
+
+		int phase = Math.floorMod(sky.moonPhase.index(), MOON_PHASE_LIGHT.length);
+		moonPhase = phase * (float) (Math.PI / 4.0);
+		// How clear the sky is, squared: even a light rain hides most of the aurora and the rainbow.
+		float clear = 1.0F - Math.min(weather, 1.0F);
+		clear *= clear;
+
+		coldness = ease(coldness, coldTarget(level, camera), COLD_EASE, step, snap);
+
+		// Vanilla's sky colour is darkened at night and greyed by rain: its hue is read from clear daytime
+		// skies only (and on arrival), and kept in between.
+		Vector3fc skyColor = sky.skyColor;
+		if (skyColor != null && (snap || sun[1] > 0.1F && weather < 0.05F)) {
+			linearHue(skyColor.x(), skyColor.y(), skyColor.z(), biomeScratch);
+			if (Float.isFinite(biomeScratch[0] + biomeScratch[1] + biomeScratch[2])) {
+				System.arraycopy(biomeScratch, 0, biomeHue, 0, 3);
+			}
+		}
+		// A paler biome sky leans less: a grey one (the pale garden) would only warm the blue towards peach.
+		float strength = EtnaConfig.biomeSkyColor.value * TINT_GAIN * Math.min(saturation(biomeHue) / saturation(PLAINS_SKY), 1.0F);
+		for (int k = 0; k < 3; k++) {
+			tintTarget[k] = (float) Math.pow(biomeHue[k] / PLAINS_SKY[k], strength);
+		}
+		normalizeLuma(tintTarget);
+		for (int k = 0; k < 3; k++) {
+			tintTarget[k] = Math.clamp(tintTarget[k], 1.0F - TINT_LIMIT, 1.0F + TINT_LIMIT);
+		}
+		normalizeLuma(tintTarget);
+		for (int k = 0; k < 3; k++) {
+			tint[k] = ease(tint[k], tintTarget[k], TINT_EASE, step, snap);
+		}
+
+		// The rain's memory: up at once with the rain, then slowly down once it has stopped.
+		rainMemory = Math.max(rain, rainMemory * (float) Math.exp(-step / RAIN_MEMORY));
+		if (rainMemory < 1.0e-3F) {
+			rainMemory = 0.0F;
+		}
+
+		float condition = switch (EtnaConfig.aurora) {
+			case OFF -> 0.0F;
+			case COLD -> coldness;
+			case COLD_FULL_MOON -> Math.max(coldness, phase == 0 ? FULL_MOON_AURORA : 0.0F);
+			case EVERY_NIGHT -> 1.0F;
+		};
+		// Only in the dark: from the end of dusk (the sun 3 degrees down) to full night (14 degrees down).
+		float night = 1.0F - EtnaSkyModel.smoothstep(-0.25F, -0.05F, sun[1]);
+		aurora = ease(aurora, condition * night * clear, AURORA_EASE, step, snap);
+
+		// A rainbow needs the sun behind you and low (the bow stands 42 degrees from the point opposite
+		// it, so with the sun higher than that it is under the horizon), and is brightest with it low.
+		float elevation = (float) Math.toDegrees(Math.asin(Math.clamp(sun[1], -1.0F, 1.0F)));
+		float window = EtnaSkyModel.smoothstep(-1.0F, 4.0F, elevation) * (1.0F - EtnaSkyModel.smoothstep(30.0F, 42.0F, elevation));
+		float wet = switch (EtnaConfig.rainbows) {
+			case OFF -> 0.0F;
+			case AFTER_RAIN -> rainMemory;
+			case ALWAYS -> 1.0F;
+		};
+		rainbow = RAINBOW_MAX * wet * window * clear;
+	}
+
+	/** How cold the biome at the camera is (0 .. 1, before easing); 0 when it can't be read. */
+	private static float coldTarget(@Nullable ClientLevel level, BlockPos camera) {
+		if (level == null || coldBroken) {
+			return 0.0F;
+		}
+		try {
+			float temperature = level.getBiome(camera).value().getBaseTemperature();
+			return 1.0F - EtnaSkyModel.smoothstep(COLD_FULL, COLD_NONE, temperature);
+		} catch (RuntimeException e) {
+			coldBroken = true;
+			EtnaClient.LOGGER.warn("Etna: could not read the biome's temperature, the aurora treats every biome as warm", e);
+			return 0.0F;
+		}
+	}
+
+	/** Moves value towards target by this frame's step, with time constant tau in seconds; snap jumps there. */
+	private static float ease(float value, float target, float tau, float step, boolean snap) {
+		if (snap) {
+			return target;
+		}
+		float next = value + (target - value) * (1.0F - (float) Math.exp(-step / tau));
+		// Settle on the target once within a ten-thousandth: a faded effect reaches exactly 0, so its shader
+		// branch is skipped, instead of creeping towards it (and sticking at a denormal) for good.
+		return Math.abs(target - next) < 1.0e-4F ? target : next;
+	}
+
+	/** A display colour (0 .. 1 sRGB) made linear and scaled to luma 1, into out; zeros for black. */
+	private static float[] linearHue(float r, float g, float b, float[] out) {
+		out[0] = linear(r);
+		out[1] = linear(g);
+		out[2] = linear(b);
+		normalizeLuma(out);
+		return out;
+	}
+
+	/** How colourful a colour is: 0 grey, 1 a pure primary ((max - min) / max). */
+	private static float saturation(float[] c) {
+		float max = Math.max(c[0], Math.max(c[1], c[2]));
+		float min = Math.min(c[0], Math.min(c[1], c[2]));
+		return max > 1e-4F ? (max - min) / max : 0.0F;
+	}
+
+	private static float linear(float c) {
+		c = Math.clamp(c, 0.0F, 1.0F);
+		return c <= 0.04045F ? c / 12.92F : (float) Math.pow((c + 0.055F) / 1.055F, 2.4F);
+	}
+
+	private static void normalizeLuma(float[] c) {
+		float l = EtnaSkyModel.luma(c);
+		float scale = l > 1e-4F ? 1.0F / l : 0.0F;
+		for (int k = 0; k < 3; k++) {
+			c[k] *= scale;
+		}
+	}
+
+	/**
+	 * In the End, with the End Sky setting on and the camera in the open air: Etna draws the End's sky
+	 * this frame, with the End's flash where vanilla puts it. The overworld's model stays off (modelReady).
+	 */
+	private static void updateEnd(LevelRenderState state) {
+		SkyRenderState sky = state.skyRenderState;
+		if (sky.skybox != DimensionType.Skybox.END || !EtnaConfig.endSky) {
+			return;
+		}
+		CameraRenderState camera = state.cameraRenderState;
+		boolean inAir = camera.fogType == FogType.NONE || camera.fogType == FogType.ATMOSPHERIC;
+		if (!inAir || camera.entityRenderState.doesMobEffectBlockSky || drawFailed || !pipelinesReady()) {
+			return;
+		}
+		drawEnd = true;
+		// SkyRenderer.renderEndFlash: the flash quad straight up, turned by -90 - x degrees about the east-west
+		// axis, then by 180 - y about the vertical.
+		float intensity = sky.endFlashIntensity > 1.0E-5F ? Math.clamp(sky.endFlashIntensity, 0.0F, 1.0F) : 0.0F;
+		scratch.set(0.0F, 1.0F, 0.0F)
+			.rotateX((float) Math.toRadians(-90.0F - sky.endFlashXAngle))
+			.rotateY((float) Math.toRadians(180.0F - sky.endFlashYAngle));
+		endFlash.set(scratch.x, scratch.y, scratch.z, intensity);
+	}
+
 	/** EtnaFrame.resourcesReloaded: the shaders were recompiled, so a sky pipeline that failed gets another try. */
 	static void resourcesReloaded() {
 		drawFailed = false;
@@ -236,8 +479,9 @@ public final class EtnaSky {
 	 * Etna's sky pipeline in the place of one of vanilla's two sky disc pipelines: the same colour target,
 	 * depth state and depth format (the one drawn into the separate sky target with improved transparency
 	 * has no depth, the one drawn first in the main pass does not test or write it), with the bindings of
-	 * vanilla's stars (globals, projection, the model-view matrix) and Etna's sky block, one triangle over
-	 * the screen with no vertex buffer, as vanilla's sky occluder.
+	 * vanilla's stars (globals, projection, the model-view matrix) and Etna's sky block and noise, one
+	 * triangle over the screen with no vertex buffer, as vanilla's sky occluder. The End's sky draws through
+	 * the same two: vanilla draws its End sky box in the same passes, with the same targets.
 	 */
 	private static RenderPipeline build(RenderPipeline vanilla, String path) {
 		List<BindGroupLayout> layouts = new ArrayList<>(RenderPipelines.STARS.getBindGroupLayouts());
@@ -266,40 +510,90 @@ public final class EtnaSky {
 			.build();
 	}
 
-	/** SkyRenderer.prepare, before the sky's render pass opens: uploads the sky block. */
+	/**
+	 * SkyRenderer.prepare, before the sky's render pass opens: uploads the sky block, and asks for the
+	 * noise texture (loaded on the first ask) while no pass is open.
+	 */
 	public static void prepare() {
-		if (!drawSky) {
+		if (!drawSky && !drawEnd) {
 			return;
 		}
 		try {
 			if (ubo == null) {
 				ubo = RenderSystem.getDevice().createBuffer(() -> "Etna sky UBO", UBO_USAGE, UBO_SIZE);
 			}
+			noise = Minecraft.getInstance().getTextureManager().getTexture(NOISE).textureView();
 			float seconds = (float) ((System.nanoTime() / 1.0e9) % 3600.0);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
-				Std140Builder builder = Std140Builder.onStack(stack, UBO_SIZE)
-					.putVec4(new Vector4f(sun[0], sun[1], sun[2], weather))
-					.putVec4(new Vector4f(moon[0], moon[1], moon[2], moonLight))
-					.putVec4(new Vector4f(starBrightness, sunDisc, seconds, glow))
-					.putVec4(new Vector4f(stars.m00(), stars.m01(), stars.m02(), 0.0F))
-					.putVec4(new Vector4f(stars.m10(), stars.m11(), stars.m12(), 0.0F))
-					.putVec4(new Vector4f(stars.m20(), stars.m21(), stars.m22(), 0.0F));
+				Std140Builder builder = Std140Builder.onStack(stack, UBO_SIZE);
+				if (drawSky) {
+					writeOverworld(builder, seconds);
+				} else {
+					writeEnd(builder, seconds);
+				}
 				RenderSystem.getDevice().createCommandEncoder().writeToBuffer(ubo.slice(), builder.get());
 			}
 		} catch (RuntimeException e) {
 			drawFailed = true;
 			drawSky = false;
+			drawEnd = false;
 			EtnaClient.LOGGER.error("Etna: could not upload the sky, vanilla's sky is back for this session", e);
 		}
 	}
 
+	/** The sky block for the overworld, field by field as sky_ubo.glsl lists them. */
+	private static void writeOverworld(Std140Builder builder, float seconds) {
+		EtnaConfig.NightSky night = EtnaConfig.nightSky;
+		boolean milkyWay = night == EtnaConfig.NightSky.MILKY_WAY || night == EtnaConfig.NightSky.NEBULA;
+		int shoot = EtnaConfig.shootingStars.ordinal();
+		builder.putVec4(new Vector4f(sun[0], sun[1], sun[2], weather))
+			.putVec4(new Vector4f(moon[0], moon[1], moon[2], moonLight))
+			.putVec4(new Vector4f(starBrightness, sunDisc, seconds, glow))
+			.putVec4(new Vector4f(stars.m00(), stars.m01(), stars.m02(), 0.0F))
+			.putVec4(new Vector4f(stars.m10(), stars.m11(), stars.m12(), 0.0F))
+			.putVec4(new Vector4f(stars.m20(), stars.m21(), stars.m22(), 0.0F))
+			.putVec4(new Vector4f(
+				night != EtnaConfig.NightSky.OFF ? 1.0F : 0.0F,
+				milkyWay ? 1.0F : 0.0F,
+				night == EtnaConfig.NightSky.NEBULA ? 1.0F : 0.0F,
+				0.0F
+			))
+			.putVec4(new Vector4f(SHOOT_PERIOD[shoot], SHOOT_CHANCE[shoot], 0.0F, 0.0F))
+			.putVec4(new Vector4f(aurora, coldness, 0.0F, 0.0F))
+			.putVec4(new Vector4f(EtnaConfig.roundMoon ? 1.0F : 0.0F, moonPhase, 0.0F, 0.0F))
+			.putVec4(new Vector4f(rainbow, 0.0F, 0.0F, 0.0F))
+			.putVec4(new Vector4f(tint[0], tint[1], tint[2], 0.0F))
+			.putVec4(new Vector4f(0.0F));
+	}
+
+	/**
+	 * The sky block for the End: SkyTint.w 1 draws the End sky, SkyEnd places the flash, and the clock
+	 * drifts the nebula and twinkles the stars. The overworld's fields are set to a sky with nothing in it.
+	 */
+	private static void writeEnd(Std140Builder builder, float seconds) {
+		builder.putVec4(new Vector4f(0.0F, -1.0F, 0.0F, 0.0F))
+			.putVec4(new Vector4f(0.0F, -1.0F, 0.0F, 0.0F))
+			.putVec4(new Vector4f(0.0F, 0.0F, seconds, 1.0F))
+			.putVec4(new Vector4f(1.0F, 0.0F, 0.0F, 0.0F))
+			.putVec4(new Vector4f(0.0F, 1.0F, 0.0F, 0.0F))
+			.putVec4(new Vector4f(0.0F, 0.0F, 1.0F, 0.0F));
+		for (int i = 0; i < 5; i++) {
+			builder.putVec4(new Vector4f(0.0F));
+		}
+		builder.putVec4(new Vector4f(1.0F, 1.0F, 1.0F, 1.0F))
+			.putVec4(endFlash);
+	}
+
 	/** SkyRenderer.render begins: whether Etna's sky replaces vanilla's this time. */
 	public static void beginRender(SkyRenderState state) {
-		replacing = drawSky && ubo != null && state.skybox == DimensionType.Skybox.OVERWORLD;
+		boolean ready = ubo != null && noise != null;
+		replacing = drawSky && ready && state.skybox == DimensionType.Skybox.OVERWORLD;
+		replacingEnd = drawEnd && ready && state.skybox == DimensionType.Skybox.END;
 	}
 
 	public static void endRender() {
 		replacing = false;
+		replacingEnd = false;
 	}
 
 	/** Whether vanilla's sky disc, sunrise band, sun and stars stand down for Etna's sky right now. */
@@ -307,21 +601,46 @@ public final class EtnaSky {
 		return replacing;
 	}
 
+	/** Whether vanilla's moon stands down for Etna's round moon right now (Round Moon, while Etna draws the sky). */
+	public static boolean drawsMoon() {
+		return replacing && EtnaConfig.roundMoon;
+	}
+
+	/** Whether vanilla's End flash stands down for Etna's End sky (which draws its own) right now. */
+	public static boolean replacingEnd() {
+		return replacingEnd;
+	}
+
 	/** In place of vanilla's sky disc: Etna's whole sky. False leaves the disc to vanilla. */
 	public static boolean drawSky(RenderPass pass, boolean withDepthAttachment) {
 		if (!replacing) {
 			return false;
 		}
+		draw(pass, withDepthAttachment, "Etna sky");
+		return true;
+	}
+
+	/** In place of vanilla's End sky box: Etna's End sky. False leaves the box to vanilla. */
+	public static boolean drawEndSky(RenderPass pass, boolean withDepthAttachment) {
+		if (!replacingEnd) {
+			return false;
+		}
+		draw(pass, withDepthAttachment, "Etna End sky");
+		return true;
+	}
+
+	private static void draw(RenderPass pass, boolean withDepthAttachment, String label) {
 		RenderPipeline p = withDepthAttachment ? pipelineWithDepth : pipeline;
 		GpuBufferSlice transforms = RenderSystem.getDynamicUniforms().writeTransform(RenderSystem.getModelViewMatrixCopy(), new Vector4f(1.0F, 1.0F, 1.0F, 1.0F));
-		pass.pushDebugGroup(() -> "Etna sky");
+		pass.pushDebugGroup(() -> label);
 		pass.setPipeline(RenderSystem.getCompiledPipeline(p));
 		RenderSystem.bindDefaultUniforms(pass);
 		pass.setUniform("DynamicTransforms", transforms);
 		pass.setUniform("EtnaSky", ubo.slice());
+		// Bilinear and wrapping: every channel tiles across the texture.
+		pass.setUniform("EtnaSkyNoise", noise, RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR));
 		pass.draw(3, 1, 0, 0);
 		pass.popDebugGroup();
-		return true;
 	}
 
 	/**
@@ -343,6 +662,19 @@ public final class EtnaSky {
 	/** Whether Etna draws the sky this frame. */
 	public static boolean drawsSky() {
 		return drawSky;
+	}
+
+	/**
+	 * EtnaShadows.writeUbo: EtnaNight, bytes 544-559 of the terrain block. rgb: the colour of the aurora's
+	 * light on the land (luma 1), w: how much aurora is in the sky (0 .. 1, eased; 0 by day, in rain,
+	 * without a model and with the Aurora setting off).
+	 */
+	public static void writeNight(Std140Builder builder) {
+		float amount = modelReady ? aurora : 0.0F;
+		// One allocation, not one per branch: allocations merged in a conditional crashed the JVM's optimising
+		// compiler (see EtnaShadows.NO_MAP).
+		float on = amount > 0.0F ? 1.0F : 0.0F;
+		builder.putVec4(new Vector4f(AURORA_LAND[0] * on, AURORA_LAND[1] * on, AURORA_LAND[2] * on, amount * on));
 	}
 
 	/**

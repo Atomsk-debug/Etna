@@ -8,23 +8,9 @@
 // transparency's translucent pass) keeps the look Etna had before: vanilla's fog and light under water.
 // Everything here is in display gamma, like the rest of terrain.fsh.
 
+#include <etna:water_waves.glsl>
+
 const float WATER_IOR = 1.333;
-
-// sin(x) as a parabola with one correction step, for the waves: within 0.0012 of sin, in a handful of
-// multiply-adds where sin itself is a longer sequence on many GPUs. x / 2 pi is folded into one turn
-// first, which costs large x no more precision than sin's own range reduction does.
-float etnaSin(float x) {
-    float y = fract(x * 0.15915494 + 0.5) * 2.0 - 1.0;
-    float s = 4.0 * y * (1.0 - abs(y));
-    return s + 0.225 * s * (abs(s) - 1.0);
-}
-
-// sin(x) and cos(x) the same way, in one go.
-vec2 etnaSinCos(float x) {
-    vec2 y = fract(x * 0.15915494 + vec2(0.5, 0.75)) * 2.0 - 1.0;
-    vec2 s = 4.0 * y * (1.0 - abs(y));
-    return s + 0.225 * s * (abs(s) - 1.0);
-}
 
 #ifdef ETNA_SHADOWS
 // ---- The water around the camera ------------------------------------------------------------------
@@ -205,17 +191,6 @@ vec3 underwaterShafts(vec3 viewPos, float inWater, float jitter) {
 
 // ---- Waves and the sun's glint ----------------------------------------------------------------------
 
-// The swell: the four long waves Etna's water has always had, which the sky's reflection and Snell's
-// window follow. xy: direction times frequency (radians per block), z: speed (radians per second), w:
-// height in blocks. Like the caustic waves, every speed is a whole multiple of 2 pi / 1200 (210, 306,
-// 439 and 592 of them), so the waves carry on without a seam when GameTime starts again from 0.
-const vec4 SWELL_WAVES[4] = vec4[4](
-    vec4(1.040, 0.780, 1.09956, 0.0300),
-    vec4(-0.945, 1.869, 1.60221, 0.0150),
-    vec4(3.589, -0.888, 2.29860, 0.0072),
-    vec4(-4.473, -4.410, 3.09970, 0.0036)
-);
-
 // Ripples on the swell, which break the sun's reflection up into glints as on real water: nine waves
 // from 0.83 down to 0.17 blocks long, in three octaves of three directions 120 degrees apart, each octave
 // turned against the others, with slopes of 0.045, 0.04 and 0.035 (steeper ones would strew glints all
@@ -251,13 +226,6 @@ const float GLINT_LIGHT = 0.0569;
 // shape. In weaker light (dusk, rain, the moon) this ceiling comes down with the square root of the
 // light, so dim glints don't all end up at the same peak and moonlit ones stay dimmer than sunlit ones.
 const float GLINT_PEAK = 0.7;
-
-// How much of a wave of k radians per block a pixel footprint blocks wide resolves: all of it down to 18
-// pixels per wavelength, none from 6 pixels down. The rest is averaged into the glint's roughness (the
-// same light, spread wider) instead of being drawn as detail that would crawl and sparkle.
-float waveSeen(float k, float footprint) {
-    return 1.0 - smoothstep(0.35, 1.0, k * footprint);
-}
 
 // The waves at a point of the surface, as a pixel sees them.
 struct WaterWaves {
@@ -313,16 +281,6 @@ WaterWaves waterWaves(vec2 p, float t, float footprint, vec2 target, float range
     return waves;
 }
 
-// The swell's slope at world xz p and time t, every wave as it is: what Snell's window follows.
-vec2 swellSlope(vec2 p, float t) {
-    vec2 slope = vec2(0.0);
-    for (int i = 0; i < 4; i++) {
-        vec4 w = SWELL_WAVES[i];
-        slope += (w.w * etnaSinCos(dot(p, w.xy) + t * w.z).y) * w.xy;
-    }
-    return slope;
-}
-
 // GGX's distribution of facet normals (Trowbridge-Reitz), at cos theta nh for alpha squared a2.
 float glintGgx(float nh, float a2) {
     float d = nh * nh * (a2 - 1.0) + 1.0;
@@ -337,9 +295,9 @@ float glintCap(float g, float ceiling) {
 
 // The sun's glint off the waves, seen from toEye (h: halfway between it and the sun): GLINT_LIGHT spread
 // by GGX over the faces of the waves, eased below GLINT_PEAK. light: how strongly the sun shines on the
-// water (open sky, time of day, the water reflections setting). at: the camera-relative point the glint
-// lies at, for the shadow map.
-float sunGlint(WaterWaves waves, vec3 toEye, vec3 h, float light, vec3 at) {
+// water (open sky, time of day, the water reflections setting). The caller shades it from the shadow map,
+// once for the glint and the glitter together.
+float sunGlint(WaterWaves waves, vec3 toEye, vec3 h, float light) {
     if (waves.reach <= 0.0) {
         return 0.0;
     }
@@ -350,14 +308,110 @@ float sunGlint(WaterWaves waves, vec3 toEye, vec3 h, float light, vec3 at) {
     float nh = clamp(dot(facet, h), 0.0, 1.0);
     // Facets around h, as reflected directions: D(h) (n.h) / (4 v.h) adds up to 1 over the sky.
     float g = GLINT_LIGHT * glintGgx(nh, waves.rough) * nh / (4.0 * max(dot(toEye, h), 0.1));
-    g = glintCap(g * light * waves.reach, GLINT_PEAK * sqrt(max(light, 0.0)));
-    #ifdef ETNA_SHADOWS
-    // No glint in the shade of trees and cliffs.
-    if (g > 1e-3 && EtnaLook2.w > 0.5) {
-        g *= shadowAt(at);
+    return glintCap(g * light * waves.reach, GLINT_PEAK * sqrt(max(light, 0.0)));
+}
+
+// ---- Glitter ------------------------------------------------------------------------------------------
+// Sparkles of the sun, and of the moon at night, along the path its glint takes across the water: tiny
+// facets of the waves, each turned its own way, that flash for a moment as one of them happens to mirror
+// the light into the eye. The water is cut into square cells fixed in the world; each cell holds one
+// facet with a random tilt and one round spark at a random place inside it. A cell lights up where the
+// swell's slope plus its facet's tilt comes close to the slope that mirrors the light into the eye
+// (target), so the sparks gather along the glint's path, follow the camera's view and change as the
+// waves roll. 2.2 times a second each cell draws a new facet, and the old one crossfades
+// into it, so a spark fades in and out over a few frames instead of popping. Cells are never smaller than
+// GLITTER_PIXELS pixels: further away they double in size, crossfading from one size to the next, so a
+// spark is always more than a pixel wide and still lies in the same place frame after frame.
+
+// Cell size near the camera, in blocks: two texels of a 16x16 texture.
+const float GLITTER_CELL = 0.125;
+// The fewest pixels a cell spans, so its spark (GLITTER_DOT of the cell across) stays over a pixel wide.
+const float GLITTER_PIXELS = 6.0;
+// Radius of a spark, as a share of its cell; its centre stays this far inside the cell's edges.
+const float GLITTER_DOT = 0.22;
+// The facets' tilts, as slopes: up to this far from the swell's. Wider spreads the sparks over more of
+// the water, each less likely to light.
+const float GLITTER_SPREAD = 0.25;
+// How close in slope a facet must come to the target to flash: about 10 % of the cells along the path.
+const float GLITTER_TOLERANCE = 0.08;
+// New facets per 20-minute day (2.2 a second), a whole number so the slots carry on without a seam when
+// the clock starts again from 0, and the share of each slot spent crossfading into the next.
+const float GLITTER_SLOTS = 2640.0;
+const float GLITTER_FADE = 0.35;
+// The brightest a spark gets in full sunlight, at the glitter setting's full strength. Like the glint
+// it comes down with the square root of the light, so the moon's sparks still show; the moon's get
+// GLITTER_MOON times more on top of that.
+const float GLITTER_PEAK = 1.2;
+const float GLITTER_MOON = 2.2;
+
+// Three well-mixed 32-bit numbers from a cell and a time slot: the pcg3d hash (Mark Jarzynski and Marc
+// Olano, "Hash Functions for GPU Rendering", JCGT 2020).
+uvec3 glitterHash(ivec3 v) {
+    uvec3 u = uvec3(v) * 1664525u + 1013904223u;
+    u.x += u.y * u.z;
+    u.y += u.z * u.x;
+    u.z += u.x * u.y;
+    u ^= u >> 16u;
+    u.x += u.y * u.z;
+    u.y += u.z * u.x;
+    u.z += u.x * u.y;
+    return u;
+}
+
+// The spark of one cell in one time slot at world xz p: 0 .. 1.
+float glitterSpark(vec2 p, float size, int level, int slot, vec2 seen, vec2 target) {
+    ivec2 cell = ivec2(floor(p / size));
+    uvec3 h = glitterHash(ivec3(cell, slot * 8 + level));
+    vec3 r = vec3(h) * (1.0 / 4294967296.0);
+    // The facet's tilt, spread evenly over a disc of GLITTER_SPREAD.
+    float angle = r.x * 6.2831853;
+    vec2 tilt = sqrt(r.y) * GLITTER_SPREAD * vec2(cos(angle), sin(angle));
+    vec2 miss = seen + tilt - target;
+    float aligned = 1.0 - min(dot(miss, miss) / (GLITTER_TOLERANCE * GLITTER_TOLERANCE), 1.0);
+    if (aligned <= 0.0) {
+        return 0.0;
     }
+    // Where the spark sits in its cell, from the hash's third number (two halves of it).
+    vec2 at = vec2(h.z & 0xFFFFu, h.z >> 16u) * (1.0 / 65536.0);
+    vec2 centre = (vec2(cell) + GLITTER_DOT + (1.0 - 2.0 * GLITTER_DOT) * at) * size;
+    float spot = 1.0 - smoothstep(0.0, GLITTER_DOT * size, distance(p, centre));
+    return aligned * aligned * spot;
+}
+
+// Glitter at world xz p and time t (seconds) for a pixel footprint blocks wide, before the shadow map.
+// seen: the swell's slope as the pixel resolves it; target: the slope that mirrors the light into the eye;
+// light: how strongly the light shines on the water (as for the glint). 0 with the setting at 0, without
+// Etna's block, and away from the light's path.
+float waterGlitter(vec2 p, float t, float footprint, vec2 seen, vec2 target, float light) {
+    #ifdef ETNA_SHADOWS
+    float amount = EtnaWaterSsr.y;
+    if (amount <= 0.0 || light <= 0.0 || distance(seen, target) > GLITTER_SPREAD + GLITTER_TOLERANCE) {
+        return 0.0;
+    }
+    // The cell size: GLITTER_CELL near the camera, doubling as the pixels grow, between two sizes.
+    float lod = log2(max(footprint * GLITTER_PIXELS / GLITTER_CELL, 1.0));
+    float level = floor(lod);
+    float between = lod - level;
+    // Each cell's slots start at their own time, so the water never changes all at once.
+    float sum = 0.0;
+    for (int i = 0; i < 2; i++) {
+        float l = level + float(i);
+        float size = GLITTER_CELL * exp2(l);
+        float shift = float(glitterHash(ivec3(ivec2(floor(p / size)), 7 + int(l))).x & 1023u) / 1024.0;
+        float clock = t * (GLITTER_SLOTS / 1200.0) + shift;
+        float slot = floor(clock);
+        float fade = smoothstep(0.5 - 0.5 * GLITTER_FADE, 0.5 + 0.5 * GLITTER_FADE, clock - slot);
+        // Counted round the day, so the slots just before the clock wraps are the ones just after it.
+        int s = int(mod(slot, GLITTER_SLOTS));
+        int next = int(mod(slot + 1.0, GLITTER_SLOTS));
+        float spark = mix(glitterSpark(p, size, int(l), s, seen, target), glitterSpark(p, size, int(l), next, seen, target), fade);
+        sum += spark * (i == 0 ? 1.0 - between : between);
+    }
+    float peak = GLITTER_PEAK * sqrt(light) * (ETNA_MOON ? GLITTER_MOON : 1.0);
+    return min(sum * peak * amount, 1.0);
+    #else
+    return 0.0;
     #endif
-    return g;
 }
 
 // Temporal anti-aliasing moves the level's picture by a fraction of a pixel every frame: EtnaFrame's
@@ -503,31 +557,152 @@ float waterThickness(vec3 surfacePos, out float known) {
     return sum / max(found, 1e-4);
 }
 
-// The water surface seen from above: shallow water clear, deep water the colour of the water. today:
-// the surface as it was drawn before (vanilla's alpha, the sky's reflection and the sun's glint),
-// kept where the depth is unknown. lit: the surface as shadeTerrain lit it, whose brightness (shade of
-// trees and cliffs, time of day) the water's body takes, with the hue of the water's own tint. fresnel
-// and reflection: the sky's reflection, glint: the sun's. The blend then gives
+// ---- Shoreline foam -----------------------------------------------------------------------------------
+// A thin, soft line of foam where the water meets the shore, and a little over a floor just under the
+// surface. Minecraft's shores run along the edges of blocks, so the line is measured from those edges:
+// the shadow map, which holds opaque terrain only, says which of the eight blocks around this one are
+// land, from one read at each block's middle on the water's plane, and the line follows the nearest land
+// block's edge exactly, however far away and whatever the map's resolution. Smooth noise fixed in the
+// world wobbles its edge, breaks it into patches and drifts slowly round, and the line breathes a little
+// as if the water lapped at the shore. It is lit like a white top face in the same place (sun, shade, sky,
+// torches). The map can't tell a block of land from water lying in that block's shade, so where the light
+// comes from behind a neighbouring block, only land standing barely above the water (a beach, where shade
+// can't reach that far) counts: banks get their foam on the side the light comes from. Without the map
+// (shadows off, dusk, rain) there is none.
+
+// Width of the line, in blocks, before the noise wobbles it.
+const float FOAM_WIDTH = 0.3;
+// How much of the water the line covers where it is thickest, at the setting's full strength.
+const float FOAM_OPACITY = 0.85;
+// Land counts only up to this height above the water's plane (along the light, as the map measures it):
+// higher, it is more likely the shade of a tree or a cliff top than a shore.
+const float FOAM_BANK = 1.3;
+// Land behind the block, as the light sees it, counts only up to this height: a beach's top.
+const float FOAM_BEACH = 0.2;
+// Water shallower than this over its floor, in blocks, foams too.
+const float FOAM_SHALLOW = 0.3;
+// The foam's own colour: white with a breath of blue.
+const vec3 FOAM_ALBEDO = vec3(0.80, 0.85, 0.88);
+
+// Smooth value noise, 0 .. 1, on a lattice of one block: fixed in the world, no detail finer than a block.
+float foamNoise(vec2 p) {
+    vec2 c = floor(p);
+    vec2 f = p - c;
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    ivec2 i = ivec2(c);
+    float a = float(glitterHash(ivec3(i, 911)).x);
+    float b = float(glitterHash(ivec3(i + ivec2(1, 0), 911)).x);
+    float d = float(glitterHash(ivec3(i + ivec2(0, 1), 911)).x);
+    float e = float(glitterHash(ivec3(i + ivec2(1, 1), 911)).x);
+    return mix(mix(a, b, u.x), mix(d, e, u.x), u.y) * (1.0 / 4294967296.0);
+}
+
+// How strongly foam covers the water surface at world xz p and time t (seconds), 0 .. 1, before the
+// setting. vertical: blocks of water under the surface, depthKnown how far that can be trusted.
+float shoreFoam(vec2 p, float t, float vertical, float depthKnown) {
+    if (EtnaWaterSsr.x <= 0.0 || EtnaLook2.w < 0.5) {
+        return 0.0;
+    }
+    vec3 clip = (EtnaShadowMat * vec4(etnaViewPos, 1.0)).xyz;
+    vec4 here = etnaShadowMapPoint(clip);
+    if (here.w >= 1.0) {
+        return 0.0;
+    }
+    float size = 1.0 / max(EtnaShadowInfo.x, 1e-6);
+    ivec2 last = ivec2(size) - 1;
+    float blocksPerUnit = 1.0 / max(EtnaShadowInfo.z, 1e-6);
+    vec3 alongX = EtnaShadowMat[0].xyz;
+    vec3 alongZ = EtnaShadowMat[2].xyz;
+    vec2 inBlock = fract(p);
+    vec2 toMiddle = 0.5 - inBlock;
+    float flatLight = length(ETNA_LIGHT_DIR.xz);
+    vec2 towardLight = flatLight > 1e-3 ? ETNA_LIGHT_DIR.xz / flatLight : vec2(0.0);
+    float nearest = 2.0;
+    for (int i = 0; i < 9; i++) {
+        vec2 o = vec2(float(i % 3) - 1.0, float(i / 3) - 1.0);
+        if (i == 4) {
+            continue;
+        }
+        vec4 m = etnaShadowMapPoint(clip + alongX * (toMiddle.x + o.x) + alongZ * (toMiddle.y + o.y));
+        if (m.w >= 1.0) {
+            continue;
+        }
+        float stored = texelFetch(EtnaShadowSampler, clamp(ivec2(m.xy * size), ivec2(0), last), 0).r;
+        // Reversed depth: what the light meets first stores more. Its height above the water's plane, had
+        // the light come straight down.
+        float above = (stored - m.z) * blocksPerUnit * max(ETNA_LIGHT_DIR.y, 0.05);
+        // The light reaches that block's middle from behind it (seen from here): its own shade can't be told
+        // from land there, so only a beach counts.
+        float behind = dot(normalize(o), towardLight) * flatLight;
+        float limit = behind > 0.35 ? FOAM_BEACH : FOAM_BANK;
+        if (above > 0.02 && above < limit) {
+            // From here to the nearest point of that block.
+            vec2 gap = max(mix(inBlock, 1.0 - inBlock, step(0.0, o)) * abs(o), 0.0);
+            nearest = min(nearest, length(gap));
+        }
+    }
+    // Slow, seamless drift: circles whose periods divide the 20-minute clock (2 and 1.25 minutes).
+    float turn = t * (6.2831853 / 120.0);
+    float turn2 = t * (6.2831853 / 75.0);
+    float wobble = foamNoise(p * 1.6 + 0.6 * vec2(cos(turn), sin(turn))) - 0.5;
+    float patches = smoothstep(0.25, 0.7, foamNoise(p * 3.1 + vec2(17.3, 5.1) + 0.4 * vec2(sin(turn2), cos(turn2))));
+    // The water lapping at the shore: the line breathes every 8 seconds, at its own moment along the shore.
+    float lap = 0.85 + 0.15 * etnaSin(t * (6.2831853 / 8.0) + 6.0 * wobble);
+    // Never thinner than a pixel and a half: wider and fainter instead, so it never breaks up into crawling dots.
+    float width = FOAM_WIDTH * lap;
+    float shown = max(width, 1.5 * etnaPixelFootprint);
+    float line = (1.0 - smoothstep(0.0, shown, nearest + 0.12 * wobble)) * (width / shown);
+    float shallow = (1.0 - smoothstep(0.05, FOAM_SHALLOW, vertical)) * depthKnown * 0.6;
+    float edge = 1.0 - smoothstep(0.85, 1.0, here.w);
+    return max(line, shallow) * (0.45 + 0.55 * patches) * edge;
+}
+
+// The light on foam at this point: what a white top face here would get (shadeTerrain's light for it).
+vec3 foamLight() {
+    float shadow = EtnaLook2.w > 0.5 ? shadowAt(etnaViewPos) : 1.0;
+    shadow *= etnaCloudShadow();
+    vec3 up = vec3(0.0, 1.0, 0.0);
+    vec3 sky = skyLighting(up, SurfaceDetail(up, 0.0, 0.5), false, false, shadow) * max(etnaLightmap - etnaTorchLight, 0.0);
+    return sky + torchLight(etnaTorchLight) * etnaTorchBoost();
+}
+
+// The water surface seen from above: shallow water clear, deep water the colour of the water, foam along
+// the shore. vanillaAlpha: the water texture's alpha; lit: the surface as shadeTerrain lit it, whose
+// brightness (shade of trees and cliffs, time of day) the water's body takes, with the hue of the water's
+// own tint. fresnel and reflection: the sky's reflection, glint: the sun's, with the glitter. p and t:
+// where (world xz) and when the foam is worked out. The blend then gives
 // behind * (1 - a)(1 - F) + body * (1 - T)(1 - F) + reflection * F + glint, with T what the water lets
-// through on the way to the bottom and back up to the eye, and a its average.
-vec4 waterFromAbove(vec4 today, vec3 lit, vec3 viewDir, vec3 reflection, float fresnel, vec3 glint) {
+// through on the way to the bottom and back up to the eye, and a its average. Where the depth is unknown
+// the body is the lit texture's colour and a its alpha: the look water had before it had depth, with what
+// it mirrors taken out of what it lets through, so the sky's reflection is always exactly reflection * F
+// (the water reflections pass, post/water_ssr.fsh, takes that out again where it finds the world instead).
+vec4 waterFromAbove(float vanillaAlpha, vec3 lit, vec3 viewDir, vec3 reflection, float fresnel, vec3 glint, vec2 p, float t) {
+    float plainAlpha = 1.0 - (1.0 - vanillaAlpha) * (1.0 - fresnel);
+    vec4 surface = etnaFitAlpha((lit * (vanillaAlpha * (1.0 - fresnel)) + reflection * fresnel + glint) / max(plainAlpha, 0.05), plainAlpha);
     float known;
     float alongLight = waterThickness(etnaViewPos, known);
-    if (known <= 0.0) {
-        return today;
-    }
     float vertical = alongLight * max(ETNA_LIGHT_DIR.y, 0.05);
-    float path = min(vertical / max(-viewDir.y, 0.1), 64.0);
-    vec3 transmittance = exp(-waterExtinction(EtnaWaterLook.x) * path);
-    float a = clamp(1.0 - dot(transmittance, vec3(0.25, 0.5, 0.25)), 0.12, 1.0);
-    vec3 hue = vertexColor.rgb / max(dot(vertexColor.rgb, LUMA), 0.02);
-    vec3 body = hue * (0.6 * dot(lit, LUMA));
-    float alpha = 1.0 - (1.0 - a) * (1.0 - fresnel);
-    vec4 deep = etnaFitAlpha((body * (1.0 - transmittance) * (1.0 - fresnel) + reflection * fresnel + glint) / max(alpha, 0.05), alpha);
-    // Mixed as the blend sees them (colour times alpha), so the hand-over to today's look stays smooth.
-    float outAlpha = mix(today.a, deep.a, known);
-    vec3 covered = mix(today.rgb * today.a, deep.rgb * deep.a, known);
-    return vec4(covered / max(outAlpha, 1e-4), outAlpha);
+    // Mixed as the blend sees them (colour times alpha), so every hand-over stays smooth.
+    vec3 covered = surface.rgb * surface.a;
+    float outAlpha = surface.a;
+    if (known > 0.0) {
+        float path = min(vertical / max(-viewDir.y, 0.1), 64.0);
+        vec3 transmittance = exp(-waterExtinction(EtnaWaterLook.x) * path);
+        float a = clamp(1.0 - dot(transmittance, vec3(0.25, 0.5, 0.25)), 0.12, 1.0);
+        vec3 hue = vertexColor.rgb / max(dot(vertexColor.rgb, LUMA), 0.02);
+        vec3 body = hue * (0.6 * dot(lit, LUMA));
+        float alpha = 1.0 - (1.0 - a) * (1.0 - fresnel);
+        vec4 deep = etnaFitAlpha((body * (1.0 - transmittance) * (1.0 - fresnel) + reflection * fresnel + glint) / max(alpha, 0.05), alpha);
+        covered = mix(covered, deep.rgb * deep.a, known);
+        outAlpha = mix(outAlpha, deep.a, known);
+    }
+    float foam = shoreFoam(p, t, vertical, known) * EtnaWaterSsr.x * FOAM_OPACITY;
+    if (foam > 0.003) {
+        // A layer over the water, which covers what the water shows by its own share.
+        covered = mix(covered, FOAM_ALBEDO * foamLight(), foam);
+        outAlpha = 1.0 - (1.0 - outAlpha) * (1.0 - foam);
+    }
+    return etnaFitAlpha(covered / max(outAlpha, 1e-4), outAlpha);
 }
 
 // The water surface seen from below: a window to the sky within about 48.6 degrees of straight up, a
@@ -700,9 +875,9 @@ float etnaShadeOpen() {
     return etnaSkyLight;
 }
 
-// Animated waves, a reflection of the sky and the sun's glint on the top and the underside of the water.
-// In the classic translucent pass the surface also gets its depth (seen from above) and Snell's window
-// (seen from below, with the camera under water); elsewhere, and where the depth is unknown, alpha stays
+// Animated waves, a reflection of the sky, the sun's glint and its glitter on the top and the underside of
+// the water. In the classic translucent pass the surface also gets its depth and its foam (seen from
+// above) and Snell's window (seen from below, with the camera under water); elsewhere alpha stays
 // vanilla's: with improved transparency the alpha-only phase has measured it already.
 vec4 shadeWater(vec4 color, vec3 normal) {
     vec3 viewDir = normalize(etnaViewPos);
@@ -729,23 +904,29 @@ vec4 shadeWater(vec4 color, vec3 normal) {
     float open = etnaSkyLight * etnaDaylight;
     float light = open * ETNA_LIGHT_STRENGTH * ETNA_WATER_REFLECTIONS;
     vec3 h = normalize(ETNA_LIGHT_DIR + toEye);
-    // The slope that would mirror the sun into the eye here. Only top faces glint.
+    // The slope that would mirror the sun into the eye here. Only top faces glint and glitter.
     vec2 target = normal.y > 0.8 && light > 0.0 ? -h.xz / max(h.y, 0.05) : vec2(1e4);
     WaterWaves waves = waterWaves(p, t, etnaPixelFootprint, target, GLINT_REACH);
     // The sky's reflection follows the swell as far as the pixel resolves it: further away its waves
     // would only shimmer.
     vec3 n = normalize(vec3(-waves.seen.x, 1.0, -waves.seen.y));
     n.y *= sign(normal.y);
-    float fresnel = 0.04 + 0.96 * pow(1.0 - clamp(dot(toEye, n), 0.0, 1.0), 5.0);
+    float fresnel = waterFresnel(dot(toEye, n));
     vec3 skyReflection = etnaWaterSky(reflect(-toEye, n)) * open;
-    vec3 glint = sunColor() * sunGlint(waves, toEye, h, light, steady);
-    vec4 today = vec4(mix(color.rgb, skyReflection, fresnel * ETNA_WATER_REFLECTIONS) + glint, color.a);
-    #if defined(ETNA_SHADOWS) && defined(ETNA_TRANSLUCENT_LAYER)
-    if (normal.y > 0.8 && cameraInAir() > 0.5) {
-        return waterFromAbove(today, color.rgb, viewDir, skyReflection, fresnel * ETNA_WATER_REFLECTIONS, glint);
+    float sun = sunGlint(waves, toEye, h, light) + waterGlitter(p, t, etnaPixelFootprint, waves.seen, target, light);
+    #ifdef ETNA_SHADOWS
+    // No glint and no glitter in the shade of trees and cliffs.
+    if (sun > 1e-3 && EtnaLook2.w > 0.5) {
+        sun *= shadowAt(steady);
     }
     #endif
-    return today;
+    vec3 glint = sunColor() * sun;
+    #if defined(ETNA_SHADOWS) && defined(ETNA_TRANSLUCENT_LAYER)
+    if (normal.y > 0.8 && cameraInAir() > 0.5) {
+        return waterFromAbove(color.a, color.rgb, viewDir, skyReflection, fresnel * ETNA_WATER_REFLECTIONS, glint, p, t);
+    }
+    #endif
+    return vec4(mix(color.rgb, skyReflection, fresnel * ETNA_WATER_REFLECTIONS) + glint, color.a);
 }
 
 // The medium between the camera and this fragment, applied after the distance haze and before vanilla's

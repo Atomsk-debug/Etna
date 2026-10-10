@@ -1,14 +1,17 @@
 #version 330
 #extension GL_ARB_separate_shader_objects : require
 
-// Etna final pass: sharpening, bloom, exposure, colour grade, tone curve, vignette. Runs after the hand is
-// drawn.
+// Etna final pass: sharpening, bloom, exposure, the mood (grade.glsl), colour grade, tone curve, vignette.
+// Runs after the hand is drawn.
 
 #include <etna:settings.glsl>
 #include <etna:tone.glsl>
+#include <etna:grade.glsl>
 
 uniform sampler2D InSampler;
 uniform sampler2D BloomSampler;
+// The picture blurred at a quarter of the screen's size for the mood's dreamy glow (glow_combine.fsh).
+uniform sampler2D GlowSampler;
 
 layout(std140) uniform SamplerInfo {
     vec2 OutSize;
@@ -57,6 +60,8 @@ const float VISIBILITY_KNEE = 0.1;
 void main() {
     ivec2 pixel = ivec2(gl_FragCoord.xy);
     vec3 color = Color2.w > 0.005 ? sharpen(pixel, Color2.w) : fetch(pixel);
+    // This pixel's brightness before the grade, which the dreamy glow compares the blurred picture with.
+    float sharp = dot(color * color, ETNA_LUMA);
 
     // From here to the tone curve everything works in scene light (tone.glsl), which goes past white.
     vec3 light = etnaSceneLight(color);
@@ -66,13 +71,18 @@ void main() {
     // sun's glow stays exactly as bright as it was, and only light spilling onto darker things around
     // it shows. Whatever is under the bloom threshold sends out no glow of its own.
     if (Glow.x > 0.005) {
+        // The mood may tint the bloom (Mood5, luminance 1).
+        // The tint colours only the light the bloom adds, never the bright thing itself.
         vec3 glow = texture(BloomSampler, texCoord).rgb;
-        light += min(Glow.x * TONE_GLOW_MIX, 0.1) * (glow - etnaBrightPart(light));
+        light += min(Glow.x * TONE_GLOW_MIX, 0.1) * (glow - etnaBrightPart(light)) * Mood5.rgb;
     }
 
     // Exposure: the brightness setting times the eyes' adaptation to the light around the camera
     // (EtnaEye.java: a little brighter in caves and at night, a little calmer at noon).
     light *= Color.x * Eye.y;
+    // The mood's exposure, white balance, contrast and highlight softness, before Visibility so that its
+    // lift still applies to the mood's darks.
+    light = etnaMoodScene(light);
 
     // Visibility lifts the darkest tones and leaves the bright ones: L + a T x / (1 + x^2) with x = L / T
     // adds the most around T (a deep shade), up to 1 + a times the light in near black, and fades back to
@@ -102,7 +112,12 @@ void main() {
     // Back to the screen: the highlights roll off towards white instead of clipping, and nothing leaves
     // the 0 .. 1 range the S-curve below is defined on (above 1 its pow() got a negative base and returned
     // NaN, which once turned the sky lime).
-    color = sqrt(etnaToneMap(light));
+    vec3 shown = etnaToneMap(light);
+    // The mood's dreamy glow and halation, then its colours (grade.glsl), in display light.
+    if (Mood2.w > 0.001 || Mood4.w > 0.001) {
+        shown = etnaMoodGlow(shown, texture(GlowSampler, texCoord), sharp);
+    }
+    color = sqrt(clamp(etnaMoodColor(shown), 0.0, 1.0));
 
     float k = Color.y;
     // The curve's toe pressed the darks down (at Vivid's contrast a 0.05 grey came out at 0.040, a
@@ -110,11 +125,13 @@ void main() {
     // quarter instead: shadows keep their level, darks stay in order (the result still rises
     // everywhere, over the whole contrast range), and from 0.25 up the curve is as before.
     color += (curve(color, k) - color) * smoothstep(0.0, 0.25, color);
+    color = etnaMoodLift(color);
 
     // The vignette darkens dark corners and leaves bright ones (sky, snow) as they are.
     vec2 centered = texCoord - 0.5;
     centered.x *= OutSize.x / OutSize.y;
-    color *= 1.0 - smoothstep(0.5, 1.3, length(centered)) * Color2.z * (1.0 - dot(color, ETNA_LUMA));
+    float vignette = max(Color2.z + Mood1.w, 0.0);
+    color *= 1.0 - smoothstep(0.5, 1.3, length(centered)) * vignette * (1.0 - dot(color, ETNA_LUMA));
 
     // Half a step of 8-bit noise breaks up banding in smooth gradients (sky, fog, shade). It stays
     // still, so it never shimmers.

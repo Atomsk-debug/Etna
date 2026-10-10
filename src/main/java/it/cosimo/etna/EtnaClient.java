@@ -46,6 +46,7 @@ public final class EtnaClient implements ClientModInitializer {
 	private void tick(Minecraft mc) {
 		handleToggleKey(mc);
 		EtnaFoliage.update(mc);
+		EtnaMotes.tick(mc);
 		activeEffect = EtnaConfig.enabled && mc.level != null ? FINAL : null;
 	}
 

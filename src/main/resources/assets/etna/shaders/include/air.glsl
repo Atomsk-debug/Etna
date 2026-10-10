@@ -16,6 +16,9 @@
 //   shadow map, the world pass works out the rest in closed form.
 // The mist's density along a ray integrates exactly (exponential height fog, after Inigo Quilez, "Better
 // Fog", 2010), so the mist itself needs no samples and has no noise: only the shadowed share is marched.
+//
+// Dimensions without a sun (the Nether, the End) have air of their own, etnaSunlessAir, in the same fields
+// (EtnaAir.sunless): no sun, no shafts, but air that glows.
 
 // Clear air in front of the camera: the player's own surroundings are never fogged.
 const float AIR_MIST_START = 6.0; // blocks
@@ -94,6 +97,51 @@ void etnaAirLight(out vec3 sun, out vec3 ambient) {
     }
     sun *= Sun.w;
     ambient = mix(MistColor.rgb * 0.94, vec3(0.050, 0.056, 0.068), Shafts.z) * (1.0 - 0.3 * Shafts.y);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Air without a sun (Air.w 0), from EtnaAir.sunless. In the Nether: a haze in the glowing colour of the
+// biome's fog (MistColor.rgb, brighter than vanilla's dark fog, never darker), uniform in height, and a low
+// mist that glows like the lava (AirSun.rgb) over the lava sea, thinning by e every LAVA_MIST_SCALE
+// blocks above its surface (Mist.w is the camera's height above it). In the End, the faint violet haze
+// alone. Both only ever add their glow in front of what is there, never darken it: nothing is lit or
+// shadowed by them, so they need no samples and have no noise. The first SUNLESS_CLEAR blocks stay clear, so what the player
+// fights and builds keeps its colour. Beyond vanilla's fog end (MistColor.w) its fog has turned the land
+// into the colour of the background, and the haze stops thickening there: the farthest land and the
+// background behind it get the same air, so no edge shows between them.
+
+const float SUNLESS_CLEAR = 8.0; // blocks
+const float LAVA_MIST_SCALE = 5.0; // blocks
+
+vec3 etnaSunlessAir(vec3 c, bool sky, vec2 uv, vec3 position) {
+    if (Mist.x + Mist.y <= 0.0) {
+        return c;
+    }
+    vec3 dir;
+    float dist;
+    if (sky) {
+        // Only the direction matters (as in world_light.fsh): a point a hair in front of the far plane,
+        // turned to face away from the camera.
+        vec4 farPoint = InvViewProj * vec4(uv, 1e-6, 1.0);
+        vec3 ray = farPoint.w < 0.0 ? -farPoint.xyz : farPoint.xyz;
+        dir = ray / max(length(ray), 1e-6);
+        dist = MistColor.w;
+    } else {
+        dist = length(position);
+        dir = position / max(dist, 1e-4);
+    }
+    float reach = max(min(dist, MistColor.w) - SUNLESS_CLEAR, 0.0);
+    float haze = Mist.y * reach;
+    float low = Mist.x * etnaLayerDepth(Mist.w + dir.y * SUNLESS_CLEAR, dir.y, reach, LAVA_MIST_SCALE);
+    float depth = haze + low;
+    if (depth < 1e-4) {
+        return c;
+    }
+    // Both layers glow in their own colour, in proportion to how much of each lies in front, and the glow is
+    // screened over the picture: it lifts the dark rock and the fog towards it and barely touches what is
+    // brighter already (the lava, glowstone), which keeps its colour instead of turning muddy behind the haze.
+    vec3 glow = (MistColor.rgb * haze + AirSun.rgb * low) / depth;
+    return c + (1.0 - c) * clamp(glow, 0.0, 1.0) * (1.0 - exp(-depth));
 }
 
 #endif

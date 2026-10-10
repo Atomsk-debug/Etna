@@ -12,7 +12,8 @@
 // takes its texture's average colour: none of the texture's own pixels show on water.
 // Block textures get texel-sized bumps worked out from the textures themselves, surfaces a soft sheen
 // in the sun and a wet look in rain, leaves glow with the sun behind them and torches light warmly, the
-// one in the player's hand too.
+// one in the player's hand too. Metals, gems, polished stone, glass and ice shine by type, ores glint,
+// snow, sand and ice sparkle, puddles gather in rain and flowers glow at night (terrain_surface.glsl).
 // ETNA_SHADOW_PASS is the depth-only draw into the shadow map.
 // The code that reads the shadow map, the clouds' shadows, the water and the hooks for dark places live
 // in includes (assets/etna/shaders/include/terrain_*.glsl); terrain_hooks.glsl lists the functions this
@@ -131,6 +132,8 @@ vec3 etnaWaterSky(vec3 dir) {
 // How many blocks one screen pixel spans on this surface, from etnaViewPos's derivatives taken before any
 // discard. Set at the start of main (it stays 0 in the alpha-only phase of improved transparency).
 float etnaPixelFootprint = 0.0;
+// How many of the atlas's texels one screen pixel spans, from texCoord0's derivatives, set with it.
+float etnaTexelFootprint = 0.0;
 
 #ifdef IMPROVED_FOG
 vec3 sampleBackgroundColor(ivec2 pixelCoords) {
@@ -199,7 +202,8 @@ vec3 geometricNormal(vec3 posDx, vec3 posDy) {
 }
 
 // What kind of surface this is: 0 other, 1 leaves, 2 plant, 3 water. Every vertex of leaves, plants
-// and water carries its value (terrain.vsh), so it is the same all across a face.
+// and water carries its value (terrain.vsh), so it is the same all across a face. Blocks with a material
+// (metal, gems, ...) carry minus their class there and count as other here (terrain_surface.glsl).
 float surfaceKind() {
     return etnaMaterial > 2.5 ? 3.0 : etnaMaterial > 1.5 ? 2.0 : etnaMaterial > 0.5 ? 1.0 : 0.0;
 }
@@ -365,7 +369,10 @@ vec3 sunColor() {
 vec3 skyColor() {
     #ifdef ETNA_SHADOWS
     if (ETNA_SUN_WORLD > 0.5 && ETNA_SKY_MODEL) {
-        return etnaSkylight();
+        // Under an aurora the night's skylight takes on a little of its green, at the same brightness
+        // (EtnaNight, EtnaSky.writeNight: 0 by day, in rain and with the Aurora setting off).
+        vec3 sky = etnaSkylight();
+        return mix(sky, EtnaNight.rgb * dot(sky, LUMA), 0.22 * EtnaNight.w);
     }
     #endif
     vec3 hue = FogColor.rgb / max(dot(FogColor.rgb, LUMA), 1e-3);
@@ -623,25 +630,28 @@ vec3 shadeTerrain(vec3 color, vec3 normal, SurfaceDetail detail, float kind) {
     // The vertex colour's brightest channel is vanilla's ambient occlusion times its face shading
     // (the biome tint's own brightest channel too, on grass and leaves): dividing it out leaves the
     // surface's own colour.
-    float wet = wetness(normal, color / max(vertexPeak, 1e-3), kind);
-    // Water fills a wet surface's pores, so less light scatters back out of it.
-    color *= (1.0 - 0.2 * wet) * unshade;
-    vec3 lit = color * (skyLighting(normal, detail, thin, plant, shadow) * skyPart + faceShade * torch);
+    vec3 base = color / max(vertexPeak, 1e-3);
+    float wet = wetness(normal, base, kind);
+    // The material class, and the puddle here (terrain_surface.glsl).
+    float puddle = etnaSurfaceBegin(normal, wet);
+    // Water fills a wet surface's pores, so less light scatters back out of it; a puddle darkens it more.
+    color *= (1.0 - 0.2 * wet - 0.3 * puddle) * unshade;
+    vec3 torchOn = faceShade * torch;
+    vec3 light = skyLighting(normal, detail, thin, plant, shadow) * skyPart + torchOn + etnaLavaLight(normal);
+    vec3 lit = etnaSurfaceLight(color * light, color, light, normal, detail.normal, shadow, viewDir, kind);
     if (wet > 0.0) {
-        // The film of water mirrors the sky, by Schlick's Fresnel: mostly at grazing angles, more on
-        // smooth stone than on a grass block. The horizon's colour is the best guess at what it sees.
-        float edge = clamp(1.0 + dot(normal, viewDir), 0.0, 1.0);
-        float edge2 = edge * edge;
-        float fresnel = 0.02 + 0.98 * edge2 * edge2 * edge;
-        lit = mix(lit, FogColor.rgb, fresnel * wet * mix(0.35, 0.75, detail.smoothness));
+        // The film of water mirrors the sky in the reflected direction; a puddle is a full mirror.
+        lit = etnaWetShade(lit, normal, detail.normal, detail.smoothness, viewDir, wet, puddle);
     }
     // Highlights go on last, screened over the lit colour so they never push it past white. Like the
     // sun light itself they follow vanilla's sky light here (time of day, caves). Water has its own
     // waves, reflection and sharp glint (shadeWater): a broad sheen on its flat face would only
     // spread a milky film over lakes.
-    vec3 highlight = kind > 2.5 ? vec3(0.0) : (sunSheen(normal, detail, thin, shadow, viewDir) + leafGlow(color, kind, shadow, viewDir)) * skyPart;
+    vec3 highlight = kind > 2.5 ? vec3(0.0)
+        : (sunSheen(normal, detail, thin, shadow, viewDir) * etnaSheenShare() + leafGlow(color, kind, shadow, viewDir)) * skyPart
+            + etnaSurfaceHighlight(normal, detail.normal, detail.smoothness, shadow, viewDir, skyPart, torchOn, color, wet, puddle);
     // color is the surface's own colour here, with vanilla's face shading and ambient occlusion undone.
-    return etnaGlow(lit + (1.0 - min(lit, 1.0)) * min(highlight, 1.0), color, kind);
+    return etnaSurfaceGlow(etnaGlow(lit + (1.0 - min(lit, 1.0)) * min(highlight, 1.0), color, kind), color, kind);
 }
 
 #ifdef ETNA_SHADOWS
@@ -651,6 +661,7 @@ vec3 shadeTerrain(vec3 color, vec3 normal, SurfaceDetail detail, float kind) {
 #include <etna:terrain_clouds.glsl>
 #include <etna:terrain_water.glsl>
 #include <etna:terrain_dark.glsl>
+#include <etna:terrain_surface.glsl>
 #endif
 
 // Vanilla's sampleRGSS (minecraft:texture_sampling.glsl) with its blend factor worked out first. Where a
@@ -798,6 +809,7 @@ void main() {
     vec2 uvDy = dFdy(texCoord0);
     #ifndef OIT_ALPHA_ONLY
     etnaPixelFootprint = max(length(posDx), length(posDy));
+    etnaTexelFootprint = max(length(uvDx * vec2(TextureSize)), length(uvDy * vec2(TextureSize)));
     #endif
     // Water takes its texture's average: the top and the underside, the faces with waves (shadeWater),
     // through etnaWaterTexture, the sides through etnaWaterSide; everything else the texture as it is. So
@@ -857,6 +869,11 @@ void main() {
     }
     color.rgb = etnaMediumFog(color.rgb);
     fragColor = calculateFinalColor(color);
+    #if defined(ETNA_SHADOWS) && !defined(ETNA_TRANSLUCENT_LAYER)
+    // Opaque and cut-out terrain leaves the picture's alpha at 1, whatever the texture's (the mipmapped edges
+    // of leaves lie in between): the water reflections find the water by the alpha it leaves (EtnaWaterSsr).
+    fragColor.a = 1.0;
+    #endif
     #endif
 }
 #else

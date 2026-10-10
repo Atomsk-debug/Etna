@@ -12,9 +12,10 @@ cloud shaders are based on Minecraft's own, which Etna's licence doesn't cover.
 | `src/main/resources/assets/etna/shaders/post/taa.fsh` | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `program/c4_taa_exposure.fsh` (TAA, neighbourhood and variance clipping, offcenter rejection) and `include/utility/bicubic.glsl` (fast Catmull-Rom history filter), adapted to Minecraft's reversed depth buffer and Etna's camera matrices | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/include/shadow_distortion.glsl`: `etnaShadowFactor`, used in `src/main/resources/assets/etna/shaders/core/terrain.vsh` (shadow pass), `src/main/resources/assets/etna/shaders/include/terrain_shadow.glsl` (shadow map lookups) and `src/main/resources/assets/etna/shaders/post/shafts.fsh` (the light shafts' lookups) | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `include/lighting/shadows/distortion.glsl` (quartic-length shadow map distortion) | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/core/sky.fsh`: `hash33` (where the stars sit, how bright they are, their colour) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash33`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
+| `src/main/resources/assets/etna/shaders/core/sky.vsh`: `hash41` (when and where a shooting star flares, which way it falls) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash41`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
 | `src/main/resources/assets/etna/shaders/include/terrain_water.glsl`: `fresnelDielectric` | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `include/lighting/bsdf.glsl`, `fresnel_dielectric_n` (Fresnel reflectance with total internal reflection, for Snell's window seen from under water), with floored divisors and a clamp added | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/post/shafts.fsh`: `SUBPIXEL` (the order in which the light shafts' half-resolution pixels take turns) | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `checkerboard.glsl`, the same 2×2 order | Photon Shaders License, see `LICENSE-PHOTON.txt` |
-| `src/main/resources/assets/etna/shaders/core/terrain.vsh`, `terrain.fsh`, `clouds.vsh`, `clouds.fsh` | Minecraft's vanilla `terrain` and `clouds` core shaders, which Etna replaces while it is on and extends | Based on Minecraft's vanilla shader, (c) Mojang AB, not covered by Etna's MIT licence |
+| `src/main/resources/assets/etna/shaders/core/terrain.vsh`, `terrain.fsh`, `clouds.vsh`, `clouds.fsh`, `weather.vsh`, `weather.fsh` | Minecraft's vanilla `terrain`, `clouds` and `particle` core shaders, which Etna replaces while it is on and extends (`weather` is made from `particle`, which vanilla draws rain and snow with) | Based on Minecraft's vanilla shader, (c) Mojang AB, not covered by Etna's MIT licence |
 
 The Photon Shaders License allows redistributing modified portions, except on platforms that pay creators
 (Modrinth, CurseForge) without SixthSurge's written permission, and never for money. Builds of Etna that
@@ -50,6 +51,13 @@ first, or original replacements for them.
   lobe dimmed by the thickness of leaves between the leaf and the sun, read from the shadow map's depth
   and attenuated exponentially (Simon Green, "Real-Time Approximations to Subsurface Scattering", GPU
   Gems, 2004), over an area-weighted box of shadow map texels.
+* Moods (`include/grade.glsl`, `glow_*.fsh`, `include/ink.glsl`, `EtnaMood.java`, 0.8.0): hue shifts and chroma
+  in the OkLab colour space (Björn Ottosson, "A perceptual color space for image processing", 2020, public
+  domain), white balance as von Kries gains between black bodies on the Planckian locus (cubic fit of Kim et
+  al., 2002), split toning, black lift; the dreamy glow is the Orton effect and a Pro-Mist diffusion filter
+  done lighten-only, and the halation follows film's red fringe; the ink outlines are the Laplacian of the
+  depth buffer, signed so each line falls on the nearer side. The pack families and their colour traits come
+  from Etna's own study of the packs' published screenshots; no pack assets are used.
 * Noise: interleaved gradient noise (Jorge Jimenez, 2014).
 * Shadow casters (`EtnaShadows.java`): only the chunk sections whose shadow can fall on something the
   camera sees are drawn into the shadow map. The view is extruded towards the light: the sides of the view
@@ -118,6 +126,14 @@ first, or original replacements for them.
   after Photon's gusty wind (`include/vertex/displacement.glsl`), here value noise carried along the wind,
   hashed with Chris Wellons's "lowbias32" ("Prospecting for Hash Functions", 2018). Glowing blocks that stay
   lit by day, after BSL's emissive blocks.
+* Surfaces (`terrain_surface.glsl`, `EtnaMaterials.java`, 0.8.0), ideas from other packs with Etna's own code:
+  materials by block type (metals that mirror the sky tinted by their own colour, gems, polished stone, glinting
+  ore specks, glowing redstone and amethyst) after Complementary Reimagined's integrated PBR, here told apart by
+  block names as chunks are built and shaded from the block's own texture; puddles that gather as the ground
+  soaks and rain rings in them, after Photon and Complementary Reimagined; snow, sand and ice sparkles as
+  world-anchored facets per texel. Fresnel by Christophe Schlick's approximation ("An Inexpensive BRDF Model for
+  Physically-based Rendering", 1994); the puddles' gradient noise with Ken Perlin's quintic fade ("Improving
+  Noise", 2002), hashed with Chris Wellons's "lowbias32".
 * The look Etna aims for is inspired by Complementary Reimagined by EminGT: among others, warm torch light
   against cool darkness, bright glowing blocks, and underwater fog that takes the water's own colour. No Complementary code is used:
   its licence does not allow it.

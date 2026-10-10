@@ -21,8 +21,8 @@ import org.lwjgl.system.MemoryStack;
  */
 public final class EtnaLook {
 	public static final String BLOCK = "EtnaSettings";
-	/** std140: three mat4s and fourteen vec4s. */
-	public static final int SIZE = 3 * 64 + 14 * 16;
+	/** std140: three mat4s and twenty-four vec4s. */
+	public static final int SIZE = 3 * 64 + 24 * 16;
 	/** Uniform buffer that the command encoder may write to. */
 	public static final int USAGE = 136;
 
@@ -94,7 +94,8 @@ public final class EtnaLook {
 			.putVec4(new Vector4f(EtnaConfig.brightness.value, EtnaConfig.contrast.value, EtnaConfig.saturation.value, EtnaConfig.vibrance.value))
 			.putVec4(new Vector4f(EtnaConfig.warmth.value, EtnaConfig.enabled ? EtnaConfig.visibility.value : 0.0F, EtnaConfig.vignette.value,
 				EtnaConfig.sharpen.value))
-			.putVec4(new Vector4f(EtnaConfig.bloom.value, 0.0F, EtnaConfig.bloomSize.value, 0.0F))
+			// Glow.y and Glow.w: the bloom fog (0.8.0 WEATHER, EtnaAir).
+			.putVec4(new Vector4f(EtnaConfig.bloom.value, EtnaAir.bloomFog(), EtnaConfig.bloomSize.value, EtnaAir.bloomFogReach()))
 			.putVec4(EtnaSky.postShade(EtnaConfig.ambientOcclusionStrength()))
 			.putVec4(new Vector4f(sun.x, sun.y, sun.z, EtnaShadows.lightStrength()))
 			.putVec4(new Vector4f(EtnaConfig.skyGlow.value, EtnaConfig.atmosphere.value, EtnaShadows.rain(),
@@ -105,6 +106,14 @@ public final class EtnaLook {
 		EtnaEye.writePost(builder);
 		// Mist, MistColor, Shafts and AirSun, bytes 352-415.
 		EtnaAir.writePost(builder);
+		// Bytes 416-495: Mood0 .. Mood4, the mood filter.
+		EtnaMood.writePost(builder);
+		// Bytes 496-511: Motes, the fireflies and motes the last world pass draws.
+		EtnaMotes.writePost(builder);
+		// Bytes 512-527: WaterSsr (water reflections).
+		EtnaWaterSsr.writePost(builder);
+		// Bytes 528-575: Mood5 .. Mood7, the rest of the mood filter.
+		EtnaMood.writePostTail(builder);
 		return builder.get();
 	}
 }

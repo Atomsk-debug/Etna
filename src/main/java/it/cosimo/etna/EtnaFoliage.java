@@ -85,6 +85,11 @@ public final class EtnaFoliage {
 	private EtnaFoliage() {
 	}
 
+	/** Whether chunks are being built with tags, for EtnaMaterials' wrapper too. */
+	static boolean marking() {
+		return marking;
+	}
+
 	/**
 	 * Every client tick: when Etna is turned on or off, the chunks around are built again, with or without the
 	 * tags. A benchmark run keeps them as they are: it turns Etna off and on to measure, and building every
@@ -92,7 +97,9 @@ public final class EtnaFoliage {
 	 * alpha of 220 out of 255 through).
 	 */
 	public static void update(Minecraft mc) {
-		boolean want = EtnaBenchmark.running() ? marking : EtnaConfig.enabled;
+		// Without Etna's terrain lighting vanilla's shaders draw the terrain, and its translucent one would
+		// show the material tags as extra transparency on glass and ice.
+		boolean want = EtnaBenchmark.running() ? marking : EtnaConfig.enabled && !EtnaShadows.terrainBroken();
 		if (want != marking) {
 			marking = want;
 			rebuildAround(mc);
@@ -118,8 +125,8 @@ public final class EtnaFoliage {
 
 	/**
 	 * Registers the model wrapper: after the game bakes a block's models, those of leaves and plants are wrapped
-	 * so the tags go in as Fabric's renderer emits their quads for a chunk (Fabric API draws the blocks of every
-	 * chunk through it, Indigo by default). The wrapper's transform runs first, on the model's own quads in the
+	 * (and those of blocks with a material, EtnaMaterials) so the tags go in as Fabric's renderer emits their
+	 * quads for a chunk (Fabric API draws the blocks of every chunk through it, Indigo by default). The wrapper's transform runs first, on the model's own quads in the
 	 * block's space, before the renderer tints, shades and moves them into place. Models are baked again with
 	 * each resource reload, so the plant states are gathered anew each time, into sets of that load's own:
 	 * chunks still being built with the old models keep reading the old sets.
@@ -137,7 +144,8 @@ public final class EtnaFoliage {
 					return new Leaves(model);
 				}
 				if (!isPlant(block)) {
-					return model;
+					// Metals, gems, ores and the like get their material's tag (EtnaMaterials).
+					return EtnaMaterials.wrap(model, block);
 				}
 				boolean hangs = hangs(block)
 					|| state.hasProperty(BlockStateProperties.HANGING) && state.getValue(BlockStateProperties.HANGING);

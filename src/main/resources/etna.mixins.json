@@ -19,6 +19,7 @@
 		"SkyRendererMixin",
 		"VulkanCommandEncoderMixin",
 		"VulkanRenderPassMixin",
+		"WeatherEffectRendererMixin",
 		"WindowMixin"
 	],
 	"injectors": {

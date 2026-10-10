@@ -210,6 +210,7 @@ public final class EtnaFrame {
 		historyHeld = false;
 		EtnaSky.resourcesReloaded();
 		EtnaClouds.resourcesReloaded();
+		EtnaWeather.resourcesReloaded();
 		EtnaShadows.resourcesReloaded();
 	}
 

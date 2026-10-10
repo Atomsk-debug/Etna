@@ -31,7 +31,7 @@ import net.minecraft.network.chat.Component;
  * world stays visible behind the menu.
  */
 public final class EtnaSettingsScreen extends Screen {
-	public enum Page { GENERAL, LIGHTING, SURFACES, SKY, WATER, EFFECTS, COLORS }
+	public enum Page { GENERAL, MOOD, LIGHTING, SURFACES, SKY, WONDERS, WATER, EFFECTS, COLORS }
 
 	private static final int SIDEBAR_WIDTH = 120;
 	private static final int TOP = 34;
@@ -47,7 +47,14 @@ public final class EtnaSettingsScreen extends Screen {
 	private int contentLeft;
 	private int controlWidth;
 	private int panelLeft;
-	private int row;
+	/**
+	 * The option rows of this page, top to bottom, and how many of them are scrolled past above the column. Only
+	 * the rows in view are added to the screen; scrolling builds the page again.
+	 */
+	private final List<AbstractWidget> rows = new ArrayList<>();
+	private int scroll;
+	/** The part of a row the wheel or trackpad has scrolled so far, as a trackpad sends small steps. */
+	private double scrollRemainder;
 
 	public EtnaSettingsScreen(Screen lastScreen) {
 		this(lastScreen, Page.GENERAL);
@@ -63,20 +70,40 @@ public final class EtnaSettingsScreen extends Screen {
 	protected void init() {
 		this.descriptions.clear();
 		this.refreshers.clear();
-		this.row = 0;
+		// The page keeps its rows when it is built again (scrolled, or the window resized), so the last row
+		// stays at the bottom of the column at most.
+		this.scroll = Math.clamp(this.scroll, 0, this.maxScroll());
+		this.rows.clear();
 
+		// The page tabs close up on short screens (the smallest GUI is 240 high), so the last one stays clear
+		// of Reset All below them.
+		Page[] pages = Page.values();
+		int tabStep = Math.min(ROW_HEIGHT, (this.height - 32 - TOP) / pages.length);
+		int tabHeight = Math.min(20, tabStep - 2);
 		int y = TOP;
-		for (Page target : Page.values()) {
-			Button tab = Button.builder(pageName(target), button -> this.open(target)).bounds(8, y, SIDEBAR_WIDTH - 16, 20).build();
+		for (Page target : pages) {
+			Button tab = Button.builder(pageName(target), button -> this.open(target)).bounds(8, y, SIDEBAR_WIDTH - 16, tabHeight).build();
 			tab.active = target != this.page;
 			this.addRenderableWidget(tab);
-			y += ROW_HEIGHT;
+			y += tabStep;
 		}
 		this.addRenderableWidget(Button.builder(Component.translatable("etna.options.reset"), button -> {
 			EtnaConfig.applyQuality(EtnaConfig.Quality.HIGH);
 			EtnaConfig.applyProfile(EtnaConfig.Profile.NATURAL);
 			EtnaConfig.visibility.set(EtnaConfig.VISIBILITY_DEFAULT);
 			EtnaConfig.sunPathTilt = EtnaConfig.SUN_PATH_TILT_DEFAULT;
+			// 0.8.0 MOOD
+			EtnaConfig.mood = EtnaConfig.Mood.NATURAL;
+			EtnaConfig.moodStrength.set(EtnaConfig.MOOD_STRENGTH_DEFAULT);
+			// 0.8.0 MOTES
+			EtnaConfig.fireflies = EtnaConfig.Fireflies.NORMAL;
+			// 0.8.0 WEATHER
+			EtnaConfig.resetWeather();
+			EtnaConfig.resetSurfaces();
+			// 0.8.0 WATER
+			EtnaConfig.shoreFoam.set(EtnaConfig.SHORE_FOAM_DEFAULT);
+			EtnaConfig.waterGlitter.set(EtnaConfig.WATER_GLITTER_DEFAULT);
+			EtnaConfig.resetSky();
 			this.open(this.page);
 		}).bounds(8, this.height - 28, SIDEBAR_WIDTH - 16, 20).build());
 
@@ -86,9 +113,11 @@ public final class EtnaSettingsScreen extends Screen {
 
 		switch (this.page) {
 			case GENERAL -> this.generalPage();
+			case MOOD -> this.moodPage();
 			case LIGHTING -> this.lightingPage();
 			case SURFACES -> this.surfacesPage();
 			case SKY -> this.skyPage();
+			case WONDERS -> this.wondersPage();
 			case WATER -> this.waterPage();
 			case EFFECTS -> this.effectsPage();
 			case COLORS -> this.colorsPage();
@@ -97,6 +126,31 @@ public final class EtnaSettingsScreen extends Screen {
 		this.addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> this.onClose())
 			.bounds(this.width - 108, this.height - 28, 100, 20).build());
 		this.refresh();
+	}
+
+	/** How many rows fit above the Done button: 7 on the smallest GUI (240 high). */
+	private int visibleRows() {
+		return Math.max(1, (this.height - 32 - TOP - 20) / ROW_HEIGHT + 1);
+	}
+
+	private int maxScroll() {
+		return Math.max(0, this.rows.size() - this.visibleRows());
+	}
+
+	@Override
+	public boolean mouseScrolled(double x, double y, double scrollX, double scrollY) {
+		if (x >= SIDEBAR_WIDTH && x < this.panelLeft && this.maxScroll() > 0) {
+			this.scrollRemainder += scrollY;
+			int steps = (int) this.scrollRemainder;
+			this.scrollRemainder -= steps;
+			int next = Math.clamp(this.scroll - steps, 0, this.maxScroll());
+			if (next != this.scroll) {
+				this.scroll = next;
+				this.rebuildWidgets();
+			}
+			return true;
+		}
+		return super.mouseScrolled(x, y, scrollX, scrollY);
 	}
 
 	private void generalPage() {
@@ -134,6 +188,30 @@ public final class EtnaSettingsScreen extends Screen {
 		}
 	}
 
+	/** 0.8.0 MOOD: the mood and its strength, neither part of the Look. */
+	private void moodPage() {
+		Component name = Component.translatable("etna.options.mood");
+		Button mood = this.add(Button.builder(Options.genericValueLabel(name, moodName()), button -> {
+			EtnaConfig.mood = next(EtnaConfig.Mood.values(), EtnaConfig.mood);
+			this.refresh();
+		}).size(this.controlWidth, 20).build(), "mood");
+		// The description follows the mood on the button: what it does and the resource packs it suits.
+		this.refreshers.add(() -> {
+			mood.setMessage(Options.genericValueLabel(name, moodName()));
+			Component description = Component.translatable("etna.options.mood." + key(EtnaConfig.mood) + ".desc");
+			this.descriptions.put(mood, description);
+			if (this.narrow()) {
+				mood.setTooltip(Tooltip.create(description));
+			}
+		});
+		this.add(new Slider("moodStrength", EtnaConfig.moodStrength.min, EtnaConfig.moodStrength.max, EtnaConfig.moodStrength.value,
+			EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.moodStrength.set((float) v)), "moodStrength");
+	}
+
+	private static Component moodName() {
+		return Component.translatable("etna.options.mood." + key(EtnaConfig.mood));
+	}
+
 	private void lightingPage() {
 		this.cycle("shadows", () -> onOff(EtnaConfig.shadows), () -> {
 			EtnaConfig.shadows = !EtnaConfig.shadows;
@@ -161,6 +239,11 @@ public final class EtnaSettingsScreen extends Screen {
 		this.look(EtnaConfig.leafGlow, EtnaSettingsScreen::percentOrOff);
 		this.look(EtnaConfig.torchWarmth, EtnaSettingsScreen::percentOrOff);
 		this.look(EtnaConfig.emission, EtnaSettingsScreen::percentOrOff);
+		// 0.8.0 SURFACES: not part of the look, like Visibility: moving them keeps the look as it is.
+		for (EtnaConfig.Setting setting : List.of(EtnaConfig.materials, EtnaConfig.puddles, EtnaConfig.sparkles, EtnaConfig.glowingFlowers)) {
+			this.add(new Slider(setting.key, setting.min, setting.max, setting.value, EtnaSettingsScreen::percentOrOff,
+				v -> setting.set((float) v)), setting.key);
+		}
 	}
 
 	private void skyPage() {
@@ -177,6 +260,34 @@ public final class EtnaSettingsScreen extends Screen {
 		this.look(EtnaConfig.cloudShadows, EtnaSettingsScreen::percentOrOff);
 		// Drawn by the world pass from the shadow map; with shadows on, a world pass always runs.
 		this.needsShadows(this.look(EtnaConfig.lightRays, EtnaSettingsScreen::percentOrOff));
+		// 0.8.0 WEATHER: not part of the look. The lava light from below shows without a world pass too.
+		this.add(new Slider("netherAir", EtnaConfig.netherAir.min, EtnaConfig.netherAir.max, EtnaConfig.netherAir.value,
+			EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.netherAir.set((float) v)), "netherAir");
+		// 0.8.0 SKY: not part of the look, like Visibility.
+		this.add(new Slider("biomeSkyColor", EtnaConfig.biomeSkyColor.min, EtnaConfig.biomeSkyColor.max, EtnaConfig.biomeSkyColor.value,
+			EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.biomeSkyColor.set((float) v)), "biomeSkyColor");
+	}
+
+	/** 0.8.0 SKY: the night sky's wonders, the rainbow and the End's sky; none of them part of the look. */
+	private void wondersPage() {
+		this.cycle("nightSky", () -> EtnaConfig.nightSky == EtnaConfig.NightSky.OFF
+				? CommonComponents.OPTION_OFF
+				: Component.translatable("etna.options.nightSky." + key(EtnaConfig.nightSky)),
+			() -> EtnaConfig.nightSky = next(EtnaConfig.NightSky.values(), EtnaConfig.nightSky));
+		this.cycle("aurora", () -> EtnaConfig.aurora == EtnaConfig.Aurora.OFF
+				? CommonComponents.OPTION_OFF
+				: Component.translatable("etna.options.aurora." + key(EtnaConfig.aurora)),
+			() -> EtnaConfig.aurora = next(EtnaConfig.Aurora.values(), EtnaConfig.aurora));
+		this.cycle("shootingStars", () -> EtnaConfig.shootingStars == EtnaConfig.ShootingStars.OFF
+				? CommonComponents.OPTION_OFF
+				: Component.translatable("etna.options.shootingStars." + key(EtnaConfig.shootingStars)),
+			() -> EtnaConfig.shootingStars = next(EtnaConfig.ShootingStars.values(), EtnaConfig.shootingStars));
+		this.cycle("roundMoon", () -> onOff(EtnaConfig.roundMoon), () -> EtnaConfig.roundMoon = !EtnaConfig.roundMoon);
+		this.cycle("rainbows", () -> EtnaConfig.rainbows == EtnaConfig.Rainbows.OFF
+				? CommonComponents.OPTION_OFF
+				: Component.translatable("etna.options.rainbows." + key(EtnaConfig.rainbows)),
+			() -> EtnaConfig.rainbows = next(EtnaConfig.Rainbows.values(), EtnaConfig.rainbows));
+		this.cycle("endSky", () -> onOff(EtnaConfig.endSky), () -> EtnaConfig.endSky = !EtnaConfig.endSky);
 	}
 
 	private void waterPage() {
@@ -185,6 +296,11 @@ public final class EtnaSettingsScreen extends Screen {
 		this.look(EtnaConfig.caustics, EtnaSettingsScreen::percentOrOff);
 		this.needsShadows(this.look(EtnaConfig.underwaterRays, EtnaSettingsScreen::percentOrOff));
 		this.look(EtnaConfig.waterReflections, EtnaSettingsScreen::percentOrOff);
+		// 0.8.0 WATER: not part of the look, like Visibility. The foam is found from the shadow map.
+		this.needsShadows(this.add(new Slider(EtnaConfig.shoreFoam.key, EtnaConfig.shoreFoam.min, EtnaConfig.shoreFoam.max,
+			EtnaConfig.shoreFoam.value, EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.shoreFoam.set((float) v)), EtnaConfig.shoreFoam.key));
+		this.add(new Slider(EtnaConfig.waterGlitter.key, EtnaConfig.waterGlitter.min, EtnaConfig.waterGlitter.max,
+			EtnaConfig.waterGlitter.value, EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.waterGlitter.set((float) v)), EtnaConfig.waterGlitter.key);
 	}
 
 	private void effectsPage() {
@@ -196,6 +312,17 @@ public final class EtnaSettingsScreen extends Screen {
 		this.look(EtnaConfig.bloom, EtnaSettingsScreen::percentOrOff);
 		this.look(EtnaConfig.bloomSize, EtnaSettingsScreen::percent);
 		this.look(EtnaConfig.sharpen, EtnaSettingsScreen::percentOrOff);
+		// 0.8.0 MOTES. Not part of the look; drawn by the world pass, which runs with anti-aliasing or with shadows.
+		this.cycle("fireflies",
+			() -> EtnaConfig.fireflies == EtnaConfig.Fireflies.OFF
+				? CommonComponents.OPTION_OFF
+				: Component.translatable("etna.options.fireflies." + key(EtnaConfig.fireflies)),
+			() -> EtnaConfig.fireflies = next(EtnaConfig.Fireflies.values(), EtnaConfig.fireflies));
+		// 0.8.0 WEATHER: not part of the look.
+		this.cycle("rainLook", () -> Component.translatable("etna.options.rainLook." + key(EtnaConfig.rainLook)),
+			() -> EtnaConfig.rainLook = next(EtnaConfig.RainLook.values(), EtnaConfig.rainLook));
+		this.add(new Slider("bloomFog", EtnaConfig.bloomFog.min, EtnaConfig.bloomFog.max, EtnaConfig.bloomFog.value,
+			EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.bloomFog.set((float) v)), "bloomFog");
 	}
 
 	private void colorsPage() {
@@ -236,6 +363,15 @@ public final class EtnaSettingsScreen extends Screen {
 			int bottom = Math.min(this.height - 36, TOP + 6 * ROW_HEIGHT);
 			graphics.fill(this.panelLeft - 6, TOP - 6, this.width - 6, bottom, 0x70000000);
 			graphics.textWithWordWrap(this.font, description, this.panelLeft, TOP, panelWidth - 4, DIM_TEXT);
+		}
+		if (this.maxScroll() > 0) {
+			// A thin scroll bar right of the column, for the pages with more rows than the screen holds.
+			int left = this.contentLeft + this.controlWidth + 2;
+			int track = this.visibleRows() * ROW_HEIGHT - 4;
+			int thumb = Math.max(12, track * this.visibleRows() / this.rows.size());
+			int thumbTop = TOP + (track - thumb) * this.scroll / this.maxScroll();
+			graphics.fill(left, TOP, left + 2, TOP + track, 0x40FFFFFF);
+			graphics.fill(left, thumbTop, left + 2, thumbTop + thumb, 0xC0FFFFFF);
 		}
 	}
 
@@ -290,8 +426,14 @@ public final class EtnaSettingsScreen extends Screen {
 	}
 
 	private <T extends AbstractWidget> T add(T widget, String key) {
-		widget.setPosition(this.contentLeft, TOP + this.row++ * ROW_HEIGHT);
+		int index = this.rows.size();
+		this.rows.add(widget);
+		widget.setPosition(this.contentLeft, TOP + (index - this.scroll) * ROW_HEIGHT);
 		widget.setWidth(this.controlWidth);
+		if (index < this.scroll || index >= this.scroll + this.visibleRows()) {
+			// Scrolled out of view: kept for the page's refreshers, but not on the screen.
+			return widget;
+		}
 		Component description = Component.translatable("etna.options." + key + ".desc");
 		this.descriptions.put(widget, description);
 		if (this.narrow()) {

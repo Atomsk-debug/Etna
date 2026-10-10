@@ -35,10 +35,12 @@
 // the air the sun actually lights: the shafts pass before this one (shafts.fsh) has worked out that lit
 // share at half resolution. This step does not depend on the time of day or the weather itself:
 // EtnaAir.java sets how dense each layer is, so at noon in clear weather it adds next to nothing. It
-// also stands down in water, lava and powder snow.
+// also stands down in water, lava and powder snow. In the Nether and the End the air is their own instead
+// (air.glsl's etnaSunlessAir): a haze that glows in the colour of their fog, and a lava mist over the lava sea.
 
 #include <etna:settings.glsl>
 #include <etna:air.glsl>
+#include <etna:ink.glsl>
 
 uniform sampler2D InSampler;
 uniform sampler2D DepthSampler;
@@ -54,6 +56,8 @@ layout(std140) uniform SamplerInfo {
 layout(location = 0) in vec2 texCoord;
 
 layout(location = 0) out vec4 fragColor;
+
+#include <etna:water_reflection.glsl>
 
 // ---------------------------------------------------------------------------------------------------
 // Ambient occlusion
@@ -503,6 +507,9 @@ void main() {
     vec4 h = sky ? vec4(0.0, 0.0, 0.0, 1.0) : InvViewProj * vec4(uv, depth, 1.0);
     vec3 position = divided(h);
 
+    // 0. The world reflected in the water (water_reflection.glsl), before everything that lies in front of it.
+    color = etnaWaterReflection(color, pixel, sky ? 0.0 : length(position));
+
     // 1. Ambient occlusion.
     if (Shade.x > 0.005 && !sky) {
         // Far away the disc shrinks under a pixel and only adds noise.
@@ -510,6 +517,13 @@ void main() {
         if (fade > 0.0) {
             color *= mix(1.0, ambientOcclusion(pixel, position, h, depth), Shade.x * fade);
         }
+    }
+
+    // The Ink & Colour mood's outlines (ink.glsl), before the air so the distance softens them too. Not on the
+    // screen's outermost pixels, which lack a neighbour on one side and would trace the screen's border.
+    if (Mood5.w > 0.005 && !sky && all(greaterThan(pixel, ivec2(0))) && all(lessThan(pixel, ivec2(DepthSize) - 1))) {
+        color *= etnaInk(depth, depthAt(pixel - ivec2(1, 0)), depthAt(pixel + ivec2(1, 0)), depthAt(pixel - ivec2(0, 1)),
+            depthAt(pixel + ivec2(0, 1)), length(position));
     }
 
     // 2. Sky glow and atmosphere. With the camera under water, in lava or in powder snow (Water.x)
@@ -538,7 +552,7 @@ void main() {
         }
     }
 
-    // 3. Mist and light shafts.
-    color = airLight(color, pixel, sky, uv, position);
+    // 3. Mist and light shafts; without a sun, the Nether's or the End's own air (air.glsl).
+    color = Air.w > 0.5 ? airLight(color, pixel, sky, uv, position) : etnaSunlessAir(color, sky, uv, position);
     fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

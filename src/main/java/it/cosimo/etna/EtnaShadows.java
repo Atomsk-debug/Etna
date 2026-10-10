@@ -146,7 +146,7 @@ public final class EtnaShadows {
 	// EtnaHandPos (EtnaTouch.writeTerrain), then the sky's nine (EtnaSky.writeTerrain: EtnaSky0, EtnaSky1, EtnaCloud from
 	// EtnaClouds.terrainInfo, EtnaSkySunLow .. EtnaSkyOvercast), then mat4 EtnaShadowMat2 and vec4 EtnaShadowFade for the second
 	// map. The block is in assets/etna/shaders/include/terrain_ubo.glsl. The lit clouds read it too (EtnaClouds).
-	private static final int UBO_SIZE = 64 + 23 * 16 + 64 + 16;
+	private static final int UBO_SIZE = 64 + 23 * 16 + 64 + 16 + 4 * 16;
 	/** Map size while shadows are off: the terrain shader still declares the sampler. */
 	private static final int IDLE_SIZE = 16;
 	// Same flags vanilla uses for its projection UBO: uniform buffer, writable by the encoder.
@@ -404,6 +404,7 @@ public final class EtnaShadows {
 			EtnaDark.update(state);
 			EtnaTouch.update(state, rain);
 			EtnaClouds.update(state, hasSun);
+			EtnaWaterSsr.update(state);
 			long uboStart = System.nanoTime();
 			writeUbo(light, strength, size, drawn, hasSun, moon);
 			EtnaProfiler.shadowUbo(System.nanoTime() - uboStart);
@@ -1227,6 +1228,10 @@ public final class EtnaShadows {
 	 * water. Etna's own shadow pass pipelines, and anything else, pass through.
 	 */
 	public static @Nullable RenderPipeline overrideFor(@Nullable RenderPipeline override) {
+		if (override != null && override.getShaderDefines().flags().contains("OIT")) {
+			// Improved Transparency draws this frame: its water leaves no mask for the reflections (EtnaWaterSsr).
+			EtnaWaterSsr.sawImprovedTransparency();
+		}
 		if (override == null || !EtnaConfig.enabled || broken || failedPlain.contains(override)
 			|| override.getShaders().values().stream().noneMatch(ETNA_SHADERS::containsKey)) {
 			return override;
@@ -1262,8 +1267,8 @@ public final class EtnaShadows {
 			}
 			if (p == RenderPipelines.TRANSLUCENT_TERRAIN || p == RenderPipelines.TRANSLUCENT_TERRAIN_MULTIDRAW) {
 				// Classic-transparency water and glass: the shader can tell them from cutout terrain, which
-				// also tests alpha.
-				builder = builder.withShaderDefine("ETNA_TRANSLUCENT_LAYER");
+				// also tests alpha. Their alpha marks the water for the reflections (EtnaWaterSsr.MASK_TARGET).
+				builder = builder.withShaderDefine("ETNA_TRANSLUCENT_LAYER").withColorTargetState(EtnaWaterSsr.MASK_TARGET);
 			}
 			return builder
 				.withBindGroupLayout(LAYOUT)
@@ -1434,10 +1439,16 @@ public final class EtnaShadows {
 			EtnaTouch.writeTerrain(builder);
 			// Bytes 288-431: the sky model's light for the terrain, with the cloud shadows' EtnaCloud at 320.
 			EtnaSky.writeTerrain(builder);
-			// Bytes 432-511: the second map, while the two fade.
+			// Bytes 432-511: the second map, while the two fade; EtnaShadowFade.yz carry the Nether's lava light
+			// from below (0.8.0 WEATHER, EtnaAir).
 			float toSecond = drawn ? secondaryWeight : 0.0F;
 			builder.putMat4f(toSecond > 0.0F ? secondaryMatrix : drawn ? primaryMatrix : NO_MAP)
-				.putVec4(new Vector4f(toSecond, 0.0F, 0.0F, 0.0F));
+				.putVec4(new Vector4f(toSecond, EtnaAir.lavaLight(), EtnaAir.lavaSurface(), 0.0F));
+			// Bytes 512-575 (0.8.0): EtnaSurface and EtnaSurface2 (materials, wet ground, sparkles), EtnaNight
+			// (aurora and the night sky's light on the land), EtnaWaterSsr (water reflections).
+			EtnaMaterials.writeTerrain(builder);
+			EtnaSky.writeNight(builder);
+			EtnaWaterSsr.writeTerrain(builder);
 			RenderSystem.getDevice().createCommandEncoder().writeToBuffer(ubo.slice(), builder.get());
 		}
 	}
@@ -1491,6 +1502,11 @@ public final class EtnaShadows {
 	/** Whether this dimension has a sun at all (not the Nether or the End). */
 	public static boolean sunWorld() {
 		return sunWorld;
+	}
+
+	/** Whether Etna's terrain lighting is off for this session, so the terrain is drawn with vanilla's shaders. */
+	static boolean terrainBroken() {
+		return broken;
 	}
 
 	private static void disable(String why, @Nullable Throwable cause) {

@@ -6,8 +6,8 @@
 // (EtnaShadows), and only while Etna is on: with Etna off the game draws with its own shader.
 // Adds leaves and plants waving in a gusty wind, lets the light held in the player's hand into vanilla's
 // light, and passes world data to terrain.fsh for water, sun and torch light.
-// Leaves and plants are recognised by a tag Etna puts in as chunks are built (EtnaFoliage.java): the alpha
-// of their vertex colour, which is always 1 in vanilla's chunks.
+// Leaves, plants and blocks with a material are recognised by a tag Etna puts in as chunks are built
+// (EtnaFoliage.java, EtnaMaterials.java): the alpha of their vertex colour, which is always 1 in vanilla's chunks.
 // ETNA_SHADOW_PASS is the depth-only draw into the shadow map: it only needs the position, and for the
 // alpha test of cutout terrain the texture coordinates and the vertex alpha, so it writes nothing else.
 
@@ -54,7 +54,7 @@ layout(location = 3) out vec2 texCoord0;
 layout(location = 4) out float chunkVisibility;
 layout(location = 5) out vec3 etnaViewPos;
 layout(location = 6) out vec3 etnaWorldPos;
-layout(location = 7) out float etnaMaterial; // 0 other, 1 leaves, 2 plant (2.25 on faces vanilla shades), 3 water
+layout(location = 7) out float etnaMaterial; // 0 other, 1 leaves, 2 plant (2.25 on faces vanilla shades), 3 water, -1 .. -15 a material class (terrain_surface.glsl)
 layout(location = 8) out float etnaSkyLight;
 layout(location = 9) out vec3 etnaLightmap;   // vanilla's light for this vertex (sky and block, time of day, gamma)
 layout(location = 10) out vec3 etnaTorchLight; // the part of etnaLightmap that torches, lava and other glowing blocks add to the sky's
@@ -70,6 +70,9 @@ layout(location = 12) out vec3 etnaLightLevels;
 const int TAG_LEAVES = 254;
 const int TAG_PLANT = 237;
 const int TAG_PLANT_SHADED = 220;
+// Blocks with a material (EtnaMaterials): TAG_MATERIAL + their class, 1 .. 15 (metal, gem, polished stone,
+// ore, glass, ice, snow, sand, glowing specks; terrain_surface.glsl), passed on as etnaMaterial = -class.
+const int TAG_MATERIAL = 200;
 // Leaves sway 7/16 as far as a plant's free end, which EtnaFoliage gives the edge of a plant hanging from leaves.
 const float PLANT_SWAY = 0.11;
 const float LEAF_SWAY = PLANT_SWAY * 7.0 / 16.0;
@@ -153,6 +156,9 @@ void main() {
         if (sway > 0.0) {
             pos += waveOffset(world, time, PLANT_SWAY * sway);
         }
+    } else if (tag > TAG_MATERIAL && tag <= TAG_MATERIAL + 15) {
+        material = -float(tag - TAG_MATERIAL);
+        color.a = 1.0;
     } else if (etnaIsWater(Color)) {
         material = 3.0;
     }
