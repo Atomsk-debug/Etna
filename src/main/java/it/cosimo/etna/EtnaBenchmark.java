@@ -12,6 +12,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.state.level.SkyRenderState;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
@@ -31,6 +32,12 @@ import org.jspecify.annotations.Nullable;
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
  * disturbed. Twenty steps take about 130 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
+ *
+ * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it
+ * would move about 40 degrees, and the shadows' cost moves with it (the shadow casters Etna can leave
+ * out depend on where the sun stands against the view), so the first and the last steps measured
+ * different scenes. The game's own clock runs on; only what is drawn waits. If the two "Etna as set"
+ * steps still land far apart, the table and the chat say the run is unsteady.
  *
  * The settings are only changed in memory. The run never saves them, and puts every one of them back
  * when it ends, when the player leaves the world, opens any menu (the only way to reach Etna's
@@ -187,9 +194,29 @@ public final class EtnaBenchmark {
 	/** Frames over the hitch limit in the measurement under way. */
 	private static int windowLongFrames;
 	private static String setupText = "";
+	/** The sun's angle the run holds, as the first frame of the run had it; NaN until then and outside a run. */
+	private static float heldSunAngle = Float.NaN;
+	/** "Etna as set" steps further apart than this share of their frame time (or UNSTEADY_MS) make a run unsteady. */
+	private static final double UNSTEADY_SHARE = 0.05;
+	private static final double UNSTEADY_MS = 0.4;
 	private static boolean keyWatched;
 
 	private EtnaBenchmark() {
+	}
+
+	/**
+	 * Once per frame, before Etna or the sky read the frame's sky state (LevelRendererMixin): during a run
+	 * the sun stays where it stood on the run's first frame.
+	 */
+	public static void holdSun(SkyRenderState sky) {
+		if (snapshot == null) {
+			return;
+		}
+		if (Float.isNaN(heldSunAngle)) {
+			heldSunAngle = sky.sunAngle;
+		} else {
+			sky.sunAngle = heldSunAngle;
+		}
 	}
 
 	/** Called by the settings menu's button, after the menu has closed and saved the settings. */
@@ -208,6 +235,7 @@ public final class EtnaBenchmark {
 		// The JVM's garbage collection counters load on first use, which takes a moment: now, not inside a step.
 		EtnaProfiler.gcTotals();
 		snapshot = new Snapshot();
+		heldSunAngle = Float.NaN;
 		level = mc.level;
 		step = -1;
 		settling = true;
@@ -419,6 +447,7 @@ public final class EtnaBenchmark {
 
 	private static void finish() {
 		restore(false);
+		boolean unsteady = unsteady();
 		try {
 			EtnaClient.LOGGER.info(table("[Etna] Benchmark finished, every setting is back as it was."));
 		} catch (RuntimeException e) {
@@ -426,7 +455,13 @@ public final class EtnaBenchmark {
 		} finally {
 			clear();
 		}
-		Minecraft.getInstance().showDebugChat(Component.translatable("etna.benchmark.done"));
+		Minecraft.getInstance().showDebugChat(Component.translatable(unsteady ? "etna.benchmark.unsteady" : "etna.benchmark.done"));
+	}
+
+	/** The two "Etna as set" steps landed further apart than a steady scene leaves them. */
+	private static boolean unsteady() {
+		Reference set = reference(Role.AS_SET);
+		return set.spreadMs() > Math.max(UNSTEADY_MS, UNSTEADY_SHARE * set.intervalMs());
 	}
 
 	/**
@@ -487,6 +522,7 @@ public final class EtnaBenchmark {
 
 	private static void clear() {
 		snapshot = null;
+		heldSunAngle = Float.NaN;
 		level = null;
 		measuring = false;
 		settling = false;
@@ -675,6 +711,11 @@ public final class EtnaBenchmark {
 		}
 		if (noise.length() > 0) {
 			out.append("  Noise: ").append(noise).append("; treat smaller differences as noise.\n");
+		}
+		if (unsteady()) {
+			out.append("  UNSTEADY RUN: the two \"Etna as set\" steps landed far apart, so the scene changed during the run (chunks")
+				.append(" loading, weather, mobs or the view). The savings below are rough: run it again, standing still, once")
+				.append(" the chunks around have loaded.\n");
 		}
 		// A change smaller than the noise is not a saving, nor is one under 0.1 ms.
 		double noiseMs = Math.max(0.1, Math.max(set.spreadMs(), off.spreadMs()));

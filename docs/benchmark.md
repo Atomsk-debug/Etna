@@ -21,7 +21,8 @@ Both tools are on the **General** page of Options > Etna Shaders...
   eight), and the draw calls.
 * **Run benchmark**: about 130 seconds, hands off, inside a world. Etna measures itself off, as set, and with each
   costly feature off in turn, then writes a table of what each one costs to `logs/latest.log` and puts every
-  setting back as it was.
+  setting back as it was. The sun holds still while it runs, so every step sees the same shadows. If the scene
+  still changes (chunks loading, weather, mobs walking into view), the run is marked unsteady.
 
 For a fair run:
 
