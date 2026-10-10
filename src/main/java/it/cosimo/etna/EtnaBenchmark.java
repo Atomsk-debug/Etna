@@ -29,7 +29,7 @@ import org.jspecify.annotations.Nullable;
  * A step whose camera moves or turns, or that hits a frame over 50 ms (a pipeline compile, chunks
  * loading, a garbage collection), starts measuring again half a second later, up to three tries; only a
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
- * disturbed. Fifteen steps take about 100 seconds. The run moves on from the start of each frame; a
+ * disturbed. Twenty steps take about 130 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
  *
  * The settings are only changed in memory. The run never saves them, and puts every one of them back
@@ -120,6 +120,37 @@ public final class EtnaBenchmark {
 			EtnaConfig.atmosphere.set(0.0F);
 			EtnaConfig.skyGlow.set(0.0F);
 		}, base -> base.look(EtnaConfig.atmosphere) > 0.0F || base.look(EtnaConfig.skyGlow) > 0.0F),
+		// The 0.8.0 effects, one group each: none of them is part of the Look.
+		new Step("mood off", Role.OTHER, () -> EtnaConfig.moodStrength.set(0.0F),
+			base -> base.moodStrength > 0.0F),
+		new Step("materials+puddles off", Role.OTHER, () -> {
+			EtnaConfig.materials.set(0.0F);
+			EtnaConfig.puddles.set(0.0F);
+			EtnaConfig.sparkles.set(0.0F);
+			EtnaConfig.glowingFlowers.set(0.0F);
+		}, base -> base.materials > 0.0F || base.puddles > 0.0F || base.sparkles > 0.0F || base.glowingFlowers > 0.0F),
+		// Water Reflections at 0 also turns off the reflections pass (EtnaWaterSsr); foam and glitter with it.
+		new Step("water mirror+foam off", Role.OTHER, () -> {
+			EtnaConfig.waterReflections.set(0.0F);
+			EtnaConfig.shoreFoam.set(0.0F);
+			EtnaConfig.waterGlitter.set(0.0F);
+		}, base -> base.look(EtnaConfig.waterReflections) > 0.0F || base.shoreFoam > 0.0F || base.waterGlitter > 0.0F),
+		// Plain stars stay: they are 0.7.1's sky.
+		new Step("sky wonders+fireflies off", Role.OTHER, () -> {
+			EtnaConfig.nightSky = EtnaConfig.NightSky.STARS;
+			EtnaConfig.aurora = EtnaConfig.Aurora.OFF;
+			EtnaConfig.shootingStars = EtnaConfig.ShootingStars.OFF;
+			EtnaConfig.rainbows = EtnaConfig.Rainbows.OFF;
+			EtnaConfig.biomeSkyColor.set(0.0F);
+			EtnaConfig.fireflies = EtnaConfig.Fireflies.OFF;
+		}, base -> base.nightSky != EtnaConfig.NightSky.STARS && base.nightSky != EtnaConfig.NightSky.OFF
+			|| base.aurora != EtnaConfig.Aurora.OFF || base.shootingStars != EtnaConfig.ShootingStars.OFF
+			|| base.rainbows != EtnaConfig.Rainbows.OFF || base.biomeSkyColor > 0.0F || base.fireflies != EtnaConfig.Fireflies.OFF),
+		new Step("rain+bloom fog+nether off", Role.OTHER, () -> {
+			EtnaConfig.rainLook = EtnaConfig.RainLook.VANILLA;
+			EtnaConfig.bloomFog.set(0.0F);
+			EtnaConfig.netherAir.set(0.0F);
+		}, base -> base.rainLook != EtnaConfig.RainLook.VANILLA || base.bloomFog > 0.0F || base.netherAir > 0.0F),
 		new Step("water rays+caustics off", Role.UNDER_WATER, () -> {
 			EtnaConfig.underwaterRays.set(0.0F);
 			EtnaConfig.caustics.set(0.0F);
@@ -780,6 +811,24 @@ public final class EtnaBenchmark {
 		final boolean antiAliasing = EtnaConfig.antiAliasing;
 		final boolean shadowCulling = EtnaConfig.shadowCulling;
 		final float[] look = new float[EtnaConfig.LOOK.size()];
+		// The 0.8.0 settings outside the Look.
+		final EtnaConfig.Mood mood = EtnaConfig.mood;
+		final float moodStrength = EtnaConfig.moodStrength.value;
+		final float materials = EtnaConfig.materials.value;
+		final float puddles = EtnaConfig.puddles.value;
+		final float sparkles = EtnaConfig.sparkles.value;
+		final float glowingFlowers = EtnaConfig.glowingFlowers.value;
+		final float shoreFoam = EtnaConfig.shoreFoam.value;
+		final float waterGlitter = EtnaConfig.waterGlitter.value;
+		final EtnaConfig.NightSky nightSky = EtnaConfig.nightSky;
+		final EtnaConfig.Aurora aurora = EtnaConfig.aurora;
+		final EtnaConfig.ShootingStars shootingStars = EtnaConfig.shootingStars;
+		final EtnaConfig.Rainbows rainbows = EtnaConfig.rainbows;
+		final float biomeSkyColor = EtnaConfig.biomeSkyColor.value;
+		final EtnaConfig.Fireflies fireflies = EtnaConfig.fireflies;
+		final EtnaConfig.RainLook rainLook = EtnaConfig.rainLook;
+		final float bloomFog = EtnaConfig.bloomFog.value;
+		final float netherAir = EtnaConfig.netherAir.value;
 
 		Snapshot() {
 			for (int i = 0; i < this.look.length; i++) {
@@ -805,6 +854,23 @@ public final class EtnaBenchmark {
 				// Exactly the old value: Setting.set would clamp, and these came from the same ranges anyway.
 				EtnaConfig.LOOK.get(i).value = this.look[i];
 			}
+			EtnaConfig.mood = this.mood;
+			EtnaConfig.moodStrength.value = this.moodStrength;
+			EtnaConfig.materials.value = this.materials;
+			EtnaConfig.puddles.value = this.puddles;
+			EtnaConfig.sparkles.value = this.sparkles;
+			EtnaConfig.glowingFlowers.value = this.glowingFlowers;
+			EtnaConfig.shoreFoam.value = this.shoreFoam;
+			EtnaConfig.waterGlitter.value = this.waterGlitter;
+			EtnaConfig.nightSky = this.nightSky;
+			EtnaConfig.aurora = this.aurora;
+			EtnaConfig.shootingStars = this.shootingStars;
+			EtnaConfig.rainbows = this.rainbows;
+			EtnaConfig.biomeSkyColor.value = this.biomeSkyColor;
+			EtnaConfig.fireflies = this.fireflies;
+			EtnaConfig.rainLook = this.rainLook;
+			EtnaConfig.bloomFog.value = this.bloomFog;
+			EtnaConfig.netherAir.value = this.netherAir;
 		}
 	}
 }
