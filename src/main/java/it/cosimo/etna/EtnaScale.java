@@ -67,12 +67,20 @@ public final class EtnaScale {
 	private EtnaScale() {
 	}
 
-	/** The scale the settings ask for, clamped; 1 when it can't apply (Etna or its anti-aliasing off). */
+	/**
+	 * The scale the settings ask for, clamped, or the one Auto Resolution picked (EtnaAutoScale); 1 when it can't
+	 * apply (Etna or its anti-aliasing off).
+	 */
 	public static float wanted() {
-		if (failed || !EtnaConfig.temporalActive() || EtnaClient.activeEffect() == null || !EtnaFrame.worldPassWorks()) {
+		if (!couldScale()) {
 			return 1.0F;
 		}
-		return Math.clamp(EtnaConfig.renderScale, EtnaConfig.RENDER_SCALE_MIN, 1.0F);
+		return EtnaAutoScale.scale(Math.clamp(EtnaConfig.renderScale, EtnaConfig.RENDER_SCALE_MIN, 1.0F));
+	}
+
+	/** Whether the world can be drawn smaller at all: Etna on, its anti-aliasing running, the world pass working. */
+	static boolean couldScale() {
+		return !failed && EtnaConfig.temporalActive() && EtnaClient.activeEffect() != null && EtnaFrame.worldPassWorks();
 	}
 
 	/**

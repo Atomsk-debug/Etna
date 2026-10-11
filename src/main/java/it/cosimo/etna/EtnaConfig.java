@@ -223,6 +223,12 @@ public final class EtnaConfig {
 	 */
 	public static float renderScale = 1.0F;
 	public static final float RENDER_SCALE_MIN = 0.5F;
+	/**
+	 * Auto Resolution (General page): the frame rate EtnaAutoScale holds by lowering the world's resolution, down to
+	 * renderScale (70% when that is 1); 0 is off. One of AUTO_RESOLUTION_FPS.
+	 */
+	public static int autoResolutionFps = 0;
+	public static final int[] AUTO_RESOLUTION_FPS = {0, 60, 90, 120, 144, 165};
 	/** The performance log: a line in latest.log every few seconds while in a world. */
 	public static Profiling profiling = Profiling.OFF;
 	/** Skip shadow casters that can't shadow anything on screen. Only in the file, to compare with and without. */
@@ -408,6 +414,10 @@ public final class EtnaConfig {
 		}
 		halfResolution = bool(props, "halfResolution", false);
 		renderScale = number(props, "renderScale", 1.0F, RENDER_SCALE_MIN, 1.0F);
+		autoResolutionFps = (int) number(props, "autoResolutionFps", 0, 0, 1000);
+		if (autoResolutionFps > 0 && autoResolutionFps < 30) {
+			autoResolutionFps = 30;
+		}
 		sunPathTilt = number(props, "sunPathTilt", SUN_PATH_TILT_DEFAULT, 0.0F, 45.0F);
 		visibility.set(number(props, "visibility", VISIBILITY_DEFAULT, visibility.min, visibility.max));
 		// 0.8.0 MOOD
@@ -468,6 +478,7 @@ public final class EtnaConfig {
 		props.setProperty("toggleKey", Integer.toString(toggleKey));
 		props.setProperty("halfResolution", Boolean.toString(halfResolution));
 		props.setProperty("renderScale", Float.toString(renderScale));
+		props.setProperty("autoResolutionFps", Integer.toString(autoResolutionFps));
 		props.setProperty("sunPathTilt", Float.toString(sunPathTilt));
 		props.setProperty("visibility", Float.toString(visibility.value));
 		// 0.8.0 MOOD
@@ -514,7 +525,8 @@ public final class EtnaConfig {
 				+ " | cinematic | custom (the look values are only read back with profile=custom; eyeAdaptation: 0 (off) .. 1)."
 				+ " toggleKey: key code, F7 by"
 				+ " default. halfResolution: macOS only, applies after a restart. renderScale: 0.5 .. 1, the share of the screen's"
-				+ " width and height the world is drawn at (with anti-aliasing on; 1: full size). sunPathTilt: 0 to 45, how many degrees the"
+				+ " width and height the world is drawn at (with anti-aliasing on; 1: full size). autoResolutionFps: 0 (off) or"
+				+ " the frame rate to hold by lowering the world's resolution, down to renderScale (0.7 when renderScale is 1). sunPathTilt: 0 to 45, how many degrees the"
 				+ " path of the sun and the moon leans to the south (0 is vanilla's path). visibility: 0 .. 1, how much better caves,"
 				+ " nights and shade read (0: as in 0.7.0), kept whatever the profile. profiling: off | summary (a performance line in"
 				+ " latest.log every few seconds). shadowCulling: true | false (false draws every shadow caster, to compare)."

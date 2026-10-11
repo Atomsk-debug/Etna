@@ -351,6 +351,7 @@ public final class EtnaGpuTimer {
 		if (totalNs > TOO_LONG_NS) {
 			return;
 		}
+		EtnaAutoScale.gpuFrame(slot.frame, totalNs);
 		passNs[0] = interval(Mark.SHADOW_START, Mark.SHADOW_END);
 		// The level is everything from the frame's start up to the world pass, but for the shadow pass inside it.
 		passNs[1] = interval(Mark.FRAME_START, Mark.SHADOW_START) + interval(Mark.SHADOW_END, Mark.LEVEL_END);
@@ -373,7 +374,7 @@ public final class EtnaGpuTimer {
 		unavailable = true;
 		unavailableReason = why;
 		recording = false;
-		EtnaClient.LOGGER.warn("[Etna] GPU timing is unavailable: {}. The performance log and the benchmark show CPU times only.", why);
+		EtnaClient.LOGGER.warn("[Etna] GPU timing is unavailable: {}. The performance log and the benchmark show CPU times only, and Auto Resolution keeps the World Resolution setting.", why);
 	}
 
 	private static void fail(RuntimeException e) {
