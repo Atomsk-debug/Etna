@@ -5,6 +5,7 @@ import java.util.List;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.CrossFrameResourcePool;
 import it.cosimo.etna.EtnaClient;
+import it.cosimo.etna.EtnaEntities;
 import it.cosimo.etna.EtnaFrame;
 import it.cosimo.etna.EtnaGpuTimer;
 import it.cosimo.etna.EtnaScale;
@@ -40,6 +41,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * With a render scale below 1 (EtnaScale), mainRenderTarget() hands out Etna's smaller target from the start of
  * the level until the world chain has written the full-size picture, so the level is drawn smaller; the hand and
  * everything after it use the full-size target, which this class reads through the field.
+ *
+ * Etna's entity lighting (EtnaEntities) learns here which draws are the hand's: from right before the hand is drawn
+ * to the end of renderLevel. Everything after that (the menus) keeps vanilla's light.
  */
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
@@ -70,6 +74,8 @@ public abstract class GameRendererMixin {
 	@Inject(method = "render", at = @At("HEAD"))
 	private void etna$frameStart(CallbackInfo ci) {
 		EtnaScale.beginFrame(Minecraft.getInstance().level != null);
+		// Nothing drawn before the level is the level's, in case last frame's renderLevel ended early.
+		EtnaEntities.endLevel();
 	}
 
 	@Inject(method = "renderLevel", at = @At("HEAD"))
@@ -81,6 +87,8 @@ public abstract class GameRendererMixin {
 	private void etna$levelEnd(CallbackInfo ci) {
 		// Also here in case the hand's hook below never ran: nothing after the level may draw into the smaller target.
 		EtnaScale.endLevel();
+		// The menus draw their items and mobs with vanilla's light.
+		EtnaEntities.endLevel();
 	}
 
 	@Inject(method = "mainRenderTarget", at = @At("HEAD"), cancellable = true)
@@ -120,6 +128,8 @@ public abstract class GameRendererMixin {
 			EtnaScale.endLevel();
 		}
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.WORLD_END);
+		// The hand is lit as it stands in the world, at the camera (EtnaEntities).
+		EtnaEntities.beginHand();
 	}
 
 	@Redirect(

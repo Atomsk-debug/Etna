@@ -16,6 +16,7 @@
 		"OptionsScreenMixin",
 		"PostChainMixin",
 		"PostPassMixin",
+		"PreparedRenderTypeMixin",
 		"SkyRendererMixin",
 		"VulkanCommandEncoderMixin",
 		"VulkanRenderPassMixin",

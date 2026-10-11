@@ -104,6 +104,7 @@ public final class EtnaSettingsScreen extends Screen {
 			EtnaConfig.shoreFoam.set(EtnaConfig.SHORE_FOAM_DEFAULT);
 			EtnaConfig.waterGlitter.set(EtnaConfig.WATER_GLITTER_DEFAULT);
 			EtnaConfig.resetSky();
+			EtnaConfig.entityLighting = true;
 			this.open(this.page);
 		}).bounds(8, this.height - 28, SIDEBAR_WIDTH - 16, 20).build());
 
@@ -235,6 +236,8 @@ public final class EtnaSettingsScreen extends Screen {
 		this.look(EtnaConfig.shadowDarkness, EtnaSettingsScreen::percent);
 		this.look(EtnaConfig.sunlight, EtnaSettingsScreen::percent);
 		this.look(EtnaConfig.caveLight, EtnaSettingsScreen::percentOrOff);
+		// 0.9.0: not part of the Look or the Quality.
+		this.cycle("entityLighting", () -> onOff(EtnaConfig.entityLighting), () -> EtnaConfig.entityLighting = !EtnaConfig.entityLighting);
 	}
 
 	private void surfacesPage() {

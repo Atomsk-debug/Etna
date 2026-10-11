@@ -65,7 +65,7 @@ grows a little at sunrise and sunset.
 
 ## Lighting & Shadows
 
-Sunlight, moonlight, shadows, and the faint light in caves.
+Sunlight, moonlight, shadows, the faint light in caves, and the light on mobs and items.
 
 * **Shadows**: Real shadows cast by the sun and the moon.
 * **Shadow Quality**: Detail of the shadow map: higher is sharper and slower.
@@ -74,6 +74,7 @@ Sunlight, moonlight, shadows, and the faint light in caves.
 * **Shadow Darkness**: How dark the shade is next to sunlight.
 * **Sunlight**: Strength of direct sunlight.
 * **Cave Light**: Caves and dark rooms are never pitch black: a faint, cool light shows their shape.
+* **Entity Lighting** (default On): Mobs, chests, armour, dropped and held items and your hand take the same sunlight, blue shade, shadows and warm torch light as the land around them. Off keeps Minecraft's own flat light on them. Your hand takes the shade of whatever stands over you. Not part of the Look or the Quality. Items and mobs in the inventory and other menus always keep Minecraft's light; with Improved Transparency on, translucent mobs (and a few translucent items) keep it in the world too.
 
 ## Surfaces
 
