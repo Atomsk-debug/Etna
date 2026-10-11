@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * A step whose camera moves or turns, or that hits a frame over 50 ms (a pipeline compile, chunks
  * loading, a garbage collection), starts measuring again half a second later, up to three tries; only a
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
- * disturbed. Twenty-one steps take about 135 seconds. The run moves on from the start of each frame; a
+ * disturbed. Twenty-two steps take about 145 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
  *
  * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it
@@ -109,6 +109,11 @@ public final class EtnaBenchmark {
 			EtnaConfig.lightRays.set(0.0F);
 			EtnaConfig.mist.set(0.0F);
 		}, base -> base.look(EtnaConfig.lightRays) > 0.0F || base.look(EtnaConfig.mist) > 0.0F),
+		// The benchmark holds the sun, so the fade from one shadow map to the next as the sun moves never runs by
+		// itself: this step holds one at its middle, where every sunlit pixel reads both maps (EtnaShadows.benchmarkFade).
+		// It costs more than "as set", unlike the others: what playing near sunrise and sunset adds.
+		new Step("shadow map fade", Role.SHADOWS, () -> EtnaShadows.benchmarkFade = true,
+			base -> base.shadows),
 		new Step("hard shadow edges", Role.SHADOWS, () -> EtnaConfig.shadowSoftness.set(0.25F),
 			base -> base.look(EtnaConfig.shadowSoftness) != 0.25F),
 		new Step("shadow map 2048", Role.SHADOWS, () -> EtnaConfig.shadowResolution = 2048,
@@ -958,6 +963,8 @@ public final class EtnaBenchmark {
 			EtnaConfig.antiAliasing = this.antiAliasing;
 			EtnaConfig.shadowCulling = this.shadowCulling;
 			EtnaConfig.renderScale = this.renderScale;
+			// Never on outside its own step.
+			EtnaShadows.benchmarkFade = false;
 			for (int i = 0; i < this.look.length; i++) {
 				// Exactly the old value: Setting.set would clamp, and these came from the same ranges anyway.
 				EtnaConfig.LOOK.get(i).value = this.look[i];
