@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * A step whose camera moves or turns, or that hits a frame over 50 ms (a pipeline compile, chunks
  * loading, a garbage collection), starts measuring again half a second later, up to three tries; only a
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
- * disturbed. Twenty-one steps take about 135 seconds. The run moves on from the start of each frame; a
+ * disturbed. Twenty-two steps take about 145 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
  *
  * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it
@@ -160,6 +160,10 @@ public final class EtnaBenchmark {
 		}, base -> base.nightSky != EtnaConfig.NightSky.STARS && base.nightSky != EtnaConfig.NightSky.OFF
 			|| base.aurora != EtnaConfig.Aurora.OFF || base.shootingStars != EtnaConfig.ShootingStars.OFF
 			|| base.rainbows != EtnaConfig.Rainbows.OFF || base.biomeSkyColor > 0.0F || base.fireflies != EtnaConfig.Fireflies.OFF),
+		// 0.9.0: mobs, block entities, items and the hand back on vanilla's light (EtnaEntities), so their shadow map
+		// lookups go too.
+		new Step("entity lighting off", Role.OTHER, () -> EtnaConfig.entityLighting = false,
+			base -> base.entityLighting),
 		new Step("rain+bloom fog+nether off", Role.OTHER, () -> {
 			EtnaConfig.rainLook = EtnaConfig.RainLook.VANILLA;
 			EtnaConfig.bloomFog.set(0.0F);
@@ -936,6 +940,7 @@ public final class EtnaBenchmark {
 		final EtnaConfig.RainLook rainLook = EtnaConfig.rainLook;
 		final float bloomFog = EtnaConfig.bloomFog.value;
 		final float netherAir = EtnaConfig.netherAir.value;
+		final boolean entityLighting = EtnaConfig.entityLighting;
 
 		Snapshot() {
 			for (int i = 0; i < this.look.length; i++) {
@@ -979,6 +984,7 @@ public final class EtnaBenchmark {
 			EtnaConfig.rainLook = this.rainLook;
 			EtnaConfig.bloomFog.value = this.bloomFog;
 			EtnaConfig.netherAir.value = this.netherAir;
+			EtnaConfig.entityLighting = this.entityLighting;
 		}
 	}
 }

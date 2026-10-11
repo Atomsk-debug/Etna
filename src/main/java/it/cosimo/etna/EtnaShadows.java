@@ -1239,13 +1239,22 @@ public final class EtnaShadows {
 		if (!uboReady || override != null || overrideMultidraw != null) {
 			return;
 		}
+		bindLight(pass);
+		bindingMainTerrain = true;
+	}
+
+	/**
+	 * Binds what LAYOUT names on a pass: the two shadow maps, the block and the cloud texture. For the shadow-receiving
+	 * terrain (beginTerrain) and for Etna's lit entities and items (EtnaEntities). Only while the block is ready
+	 * (lightBlock), which also means the maps are there.
+	 */
+	static void bindLight(RenderPass pass) {
 		GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 		pass.setUniform("EtnaShadowSampler", views[primary], nearest);
 		pass.setUniform("EtnaShadowSampler2", views[1 - primary], nearest);
 		pass.setUniform("EtnaShadow", ubo.slice());
 		// Bilinear, and wrapping round as the clouds repeat.
 		pass.setUniform("EtnaCloudSampler", EtnaClouds.texture(), RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR));
-		bindingMainTerrain = true;
 	}
 
 	public static void endTerrain() {

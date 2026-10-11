@@ -232,6 +232,11 @@ public final class EtnaConfig {
 	 * texel at a time as before 0.6.0 (same picture, slower), in case a graphics driver gets the gather wrong.
 	 */
 	public static boolean shadowGather = true;
+	/**
+	 * Entity Lighting (Lighting page): mobs, block entities, armour, items and the hand lit like the terrain (EtnaEntities);
+	 * off keeps vanilla's light on them. Not part of the Look or the Quality.
+	 */
+	public static boolean entityLighting = true;
 
 	// 0.8.0 SKY
 	/** The night sky's stars (EtnaSky): none, stars, stars with the Milky Way, or the Milky Way with nebula colours. */
@@ -423,6 +428,7 @@ public final class EtnaConfig {
 		profiling = choice(props, "profiling", Profiling.OFF);
 		shadowCulling = bool(props, "shadowCulling", true);
 		shadowGather = bool(props, "shadowGather", true);
+		entityLighting = bool(props, "entityLighting", true);
 		// 0.8.0 MOTES
 		fireflies = choice(props, "fireflies", Fireflies.NORMAL);
 		applyQuality(choice(props, "quality", Quality.HIGH));
@@ -481,6 +487,7 @@ public final class EtnaConfig {
 		props.setProperty("profiling", profiling.name().toLowerCase(Locale.ROOT));
 		props.setProperty("shadowCulling", Boolean.toString(shadowCulling));
 		props.setProperty("shadowGather", Boolean.toString(shadowGather));
+		props.setProperty("entityLighting", Boolean.toString(entityLighting));
 		// 0.8.0 MOTES
 		props.setProperty("fireflies", fireflies.name().toLowerCase(Locale.ROOT));
 		props.setProperty("quality", quality.name().toLowerCase(Locale.ROOT));
@@ -512,7 +519,8 @@ public final class EtnaConfig {
 				+ " nights and shade read (0: as in 0.7.0), kept whatever the profile. profiling: off | summary (a performance line in"
 				+ " latest.log every few seconds). shadowCulling: true | false (false draws every shadow caster, to compare)."
 				+ " shadowGather: true | false (false reads the shadow map one texel at a time, as before 0.6.0; applies after"
-				+ " a restart). cloudShadows: 0 .. 1, how much a cloud overhead dims the sun on the land (0: no cloud shadows)."
+				+ " a restart). entityLighting: true | false (false keeps vanilla's light on mobs, chests, items and the hand)."
+				+ " cloudShadows: 0 .. 1, how much a cloud overhead dims the sun on the land (0: no cloud shadows)."
 				+ " mist: 0 .. 1, ground and valley mist, night and rain haze, cave murk (0: off). mood: natural | clear_day | trailer"
 				+ " | storybook | old_kingdom | ink | lifelike | enchanted | mystic | autumn | pastel, kept whatever the profile."
 				+ " moodStrength: 0 .. 1 (0: the look alone). fireflies: off | few | normal"

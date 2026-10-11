@@ -308,6 +308,7 @@ public final class EtnaFrame {
 		EtnaSky.resourcesReloaded();
 		EtnaClouds.resourcesReloaded();
 		EtnaWeather.resourcesReloaded();
+		EtnaEntities.resourcesReloaded();
 		EtnaShadows.resourcesReloaded();
 	}
 
