@@ -447,22 +447,23 @@ vec3 etnaUnjitter() {
 // Only the classic translucent pass blends what this writes into alpha. With improved transparency the
 // water is drawn without Etna's block and keeps its look from before.
 
-// Fresnel reflectance at the boundary between two clear media. n: the index of refraction of the far
-// side over that of the near side (1 / 1.333 looking from the water up into the air). Returns 1 past
-// the critical angle: total internal reflection.
-// Ported from Photon Shaders by SixthSurge (include/lighting/bsdf.glsl, fresnel_dielectric_n), Photon
-// Shaders License, see CREDITS.md and LICENSE-PHOTON.txt.
+// Fresnel reflectance of a smooth boundary between two clear media, for unpolarised light: the average of
+// Fresnel's equations for the two polarisations, in the form Cook and Torrance give ("A Reflectance Model
+// for Computer Graphics", 1982; also Walter et al., "Microfacet Models for Refraction through Rough
+// Surfaces", 2007, eq. 22). cosTheta: the cosine between the ray and the surface's normal; n: the index of
+// refraction of the far side over that of the near side (1 / 1.333 looking from the water up into the
+// air). Where g^2 = n^2 - 1 + cos^2 falls below 0 no ray leaves (past the critical angle): total internal
+// reflection, 1.
 float fresnelDielectric(float cosTheta, float n) {
-    float gSq = n * n + cosTheta * cosTheta - 1.0;
-    if (gSq < 0.0) {
+    float c = min(abs(cosTheta), 1.0);
+    float g2 = n * n - 1.0 + c * c;
+    if (g2 <= 0.0) {
         return 1.0;
     }
-    float g = sqrt(gSq);
-    float a = g - cosTheta;
-    float b = g + cosTheta;
-    float x = (b * cosTheta - 1.0) / max(a * cosTheta + 1.0, 1e-4);
-    float ab = a / max(b, 1e-6);
-    return clamp(0.5 * ab * ab * (1.0 + x * x), 0.0, 1.0);
+    float g = sqrt(g2);
+    float a = (g - c) / max(g + c, 1e-6);
+    float b = (c * (g + c) - 1.0) / max(c * (g - c) + 1.0, 1e-6);
+    return clamp(0.5 * a * a * (1.0 + b * b), 0.0, 1.0);
 }
 
 // A colour and alpha for the translucent blend, which can't take a colour above 1: alpha grows (the

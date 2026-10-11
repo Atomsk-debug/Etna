@@ -849,22 +849,14 @@ public final class EtnaShadows {
 		// shadowVisibility pushes its lookup 1.2 texels off the surface (texels of the map where the receiver
 		// is) before it checks for the edge of the map. So a receiver up to that far outside the map still
 		// reads it, and a lookup can lie that much further out than its receiver. The push is largest where the
-		// texels are largest: at the map's corners (1.19 in map units), or a little beyond them for a receiver
-		// outside the map. How far beyond grows with the push itself; three rounds settle it to well under a
-		// hundredth of a block, even for the coarsest map etna.properties allows (512 texels over 256 blocks).
-		float farthest = 1.19F;
-		float push = 0.0F;
-		for (int round = 0; round < 3; round++) {
-			float edgeFactor = 1.0F - DISTORTION + DISTORTION * farthest;
-			push = 1.2F * edgeTexel * edgeFactor * edgeFactor;
-			farthest = 1.19F * (1.0F + push / radius);
-		}
+		// texels are largest: on the map's edge and past it, where the warp (shadow_distortion.glsl) is at its
+		// coarsest and a texel is edgeTexel wide.
+		float push = 1.2F * edgeTexel;
 		// A section centre further out than this, on either axis, has no point whose lookup lands in the map.
 		float mapEdge = radius + 15.0F + push;
 		// The most any section can need: a section that can't lower the floor even with it is skipped without
 		// the arithmetic.
-		float cornerFactor = 1.0F - DISTORTION + DISTORTION * farthest;
-		int largestMargin = floorMargin(softness, edgeTexel * cornerFactor * cornerFactor, reachTexels, radius);
+		int largestMargin = floorMargin(softness, edgeTexel, reachTexels, radius);
 		float r00 = rotation.m00();
 		float r10 = rotation.m10();
 		float r20 = rotation.m20();
@@ -887,9 +879,9 @@ public final class EtnaShadows {
 			int margin = FLOOR_MARGIN;
 			if (Math.abs(lx) <= mapEdge && Math.abs(ly) <= mapEdge) {
 				// Read through the map, so filtered there: its texels are largest at its lookup farthest from the
-				// middle of the map, which is its own farthest point pushed out once more (in map units, capped
-				// as above).
-				float far = Math.min(((float) Math.sqrt(lx * lx + ly * ly) + 15.0F + push) / radius, farthest);
+				// middle of the map, which is its own farthest point pushed out once more (in map units; the
+				// warp's distance never passes 1, see texelAt).
+				float far = Math.min(((float) Math.sqrt(lx * lx + ly * ly) + 15.0F + push) / radius, 1.0F);
 				float factor = 1.0F - DISTORTION + DISTORTION * far;
 				margin = floorMargin(softness, edgeTexel * factor * factor, reachTexels, radius);
 			}
@@ -1098,9 +1090,9 @@ public final class EtnaShadows {
 		 * The margins for each band of distance from the middle of the map. A reader of the map looks a number
 		 * of texels around a point (its anchor), and the distortion makes texels larger away from the middle:
 		 * within d blocks of it a texel is at most edgeTexel * f^2 blocks wide in any direction, with
-		 * f = 0.15 + 0.85 d / radius (shadow_distortion.glsl takes f from the quartic length, which is never
-		 * larger). How far a reader looks so depends on how far out it looks: settle finds a reach that covers
-		 * itself.
+		 * f = 0.15 + 0.85 min(d / radius, 1) (shadow_distortion.glsl takes f from a distance of its own that
+		 * is never larger than either, and its texels are never wider than f^2 makes them). How far a reader
+		 * looks so depends on how far out it looks: settle finds a reach that covers itself.
 		 */
 		private static boolean setMargins(float radius, int size, float softness, float reach) {
 			float texel = 2.0F * radius / size;
@@ -1169,7 +1161,7 @@ public final class EtnaShadows {
 
 		/** The widest a texel of the map gets within {@code distance} blocks of its middle, in blocks. */
 		private static float texelAt(float distance, float radius, float edgeTexel) {
-			float factor = 1.0F - DISTORTION + DISTORTION * distance / radius;
+			float factor = 1.0F - DISTORTION + DISTORTION * Math.min(distance / radius, 1.0F);
 			return edgeTexel * factor * factor;
 		}
 

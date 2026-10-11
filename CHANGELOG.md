@@ -7,6 +7,8 @@ Every release is for Minecraft 26.4-snapshot-3 with Fabric. Versions: the middle
 Fixes for 0.8.0's water, and shadows that soften with distance.
 
 * **Shadows soften with distance, as real ones do.** A shadow is sharp where it meets what casts it and blurs the further it reaches: a tree's shadow is crisp at the trunk and a soft smudge at its far end, and long evening shadows lose their detail and fade towards the tip. Before, every shadow edge had the same blur. Shadow Softness now also sets how quickly they soften; at its lowest, edges stay hard everywhere.
+* **Steadier, cheaper soft shadows.** The test build turned its shadow reads every frame and gave up where its few reads found nothing, so the softened edges shimmered and cost up to 2.5 ms a frame. Now the search for what casts a shadow reads the same spots every frame, open ground and the inside of shadows skip the wide blur, and only very wide evening blurs still turn, gently. In Etna's shadow test bench the flicker after anti-aliasing is 35 to 65 % lower than the test build's and, with the sun low, lower than 0.8.0's too.
+* **Sharper far shadows.** The shadow map is spread over the land in a new way: about as sharp round you as before, two to five times sharper towards the corners of the shadowed area, and the whole map is used (before, about 6 % of it was never filled).
 * **Long low-sun shadows are fainter.** Below about 20 degrees the sky fills shadows in a little, up to a third lighter at the horizon.
 * Far shadows fade out instead of stopping at a straight line about 180 blocks away when looking towards or away from a low sun, and ground more than 320 blocks below the camera along the light (far away under a low sun, or seen from very high up) no longer turns dark.
 
