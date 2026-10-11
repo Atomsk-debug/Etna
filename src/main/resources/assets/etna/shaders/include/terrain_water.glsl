@@ -581,8 +581,12 @@ float waterDepthBelow(out float trust) {
 // the bottom seen through it, and on murky or deep water a soft shadow in the water itself. Before 0.8.1
 // the surface took the sharp shadow of its own point, a second copy of every shadow next to the one on
 // the bottom (shifted from it by the depth, the more the lower the sun), and the two crossed each other out
-// in strange shapes. Four points down the view's way into the water, each at an equal share of the light
-// scattered back above the bottom, each the bilinear blend of four texels (shadowSoftAt). A point counts
+// in strange shapes. Four points down the line of sight into the water, each at an equal share of the light
+// scattered back above the bottom, each the bilinear blend of four texels (shadowSoftAt). The line of sight
+// goes straight on, unbent: the bottom shows through the water unbent too (the blend just lays the water over
+// it), so the shade in the water lands on the shadow seen on the bottom. Up to 0.9.0 it followed the
+// refracted ray, which runs steeper, and the two shadows sat side by side: shaded water over a lit bottom
+// looked colourless and see-through, lit water over a shaded bottom like a patch of colour. A point counts
 // as shaded only by what stands above the water's surface on its way to the sun: it is looked up where
 // that way crosses the surface (the same texels of the map, a shallower depth), so a point that ends up
 // inside a bottom rising ahead of the view (a beach stepping up out of a lake) doesn't take the bottom over
@@ -596,7 +600,7 @@ float waterBodyShadow(vec3 normal) {
     if (trust <= 0.0) {
         return shadowVisibility(normal, false);
     }
-    vec3 down = refract(normalize(etnaViewPos), vec3(0.0, 1.0, 0.0), 1.0 / WATER_IOR);
+    vec3 down = normalize(etnaViewPos);
     float cosDown = max(-down.y, 0.1);
     // Light scattered back from z blocks down went z / sin(sun) blocks through the water on its way down
     // and comes z / cos(view) blocks back up: green's extinction over both, per block of depth.
@@ -975,8 +979,8 @@ vec4 shadeWater(vec4 color, vec3 normal) {
     // would only shimmer.
     vec3 n = normalize(vec3(-waves.seen.x, 1.0, -waves.seen.y));
     n.y *= sign(normal.y);
-    float fresnel = waterFresnel(dot(toEye, n));
-    vec3 skyReflection = etnaWaterSky(reflect(-toEye, n)) * open;
+    float fresnel = waterFresnel(waterSeenCos(dot(toEye, n), etnaPixelFootprint));
+    vec3 skyReflection = etnaWaterSky(waterSeenMirror(reflect(-toEye, n), etnaPixelFootprint)) * open;
     float sun = sunGlint(waves, toEye, h, light) + waterGlitter(p, t, etnaPixelFootprint, waves.seen, target, light);
     #ifdef ETNA_SHADOWS
     // No glint and no glitter in the shade of trees and cliffs.
