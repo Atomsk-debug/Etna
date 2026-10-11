@@ -609,7 +609,12 @@ vec3 shadeTerrain(vec3 color, vec3 normal, SurfaceDetail detail, float kind) {
     // Faces turned away from the sun get no sun whatever the map says (every use of the shadow is
     // multiplied by the face's own angle to the sun), so they skip the lookup.
     if (EtnaLook2.w > 0.5 && ETNA_LIGHT_STRENGTH * etnaSunOpen() > 0.01 && (thin || dot(normal, ETNA_LIGHT_DIR) > 0.0)) {
+        #ifdef ETNA_TRANSLUCENT_LAYER
+        // Water's colour is light scattered back from under its surface, shaded down there (waterBodyShadow).
+        shadow = etnaMaterial > 2.5 ? waterBodyShadow(normal) : shadowVisibility(normal, thin);
+        #else
         shadow = shadowVisibility(normal, thin);
+        #endif
     }
     // Clouds drifting over the sun, with or without the shadow map.
     if (ETNA_LIGHT_STRENGTH * etnaSunOpen() > 0.01 && (thin || dot(normal, ETNA_LIGHT_DIR) > 0.0)) {

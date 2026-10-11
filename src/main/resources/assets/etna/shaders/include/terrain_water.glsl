@@ -481,26 +481,28 @@ vec4 etnaFitAlpha(vec3 rgb, float alpha) {
 
 // Where the point itself lies in the shade of something over the water (a tree, a cliff, the bank on the
 // sun's side, leaves), the map holds that instead of the bottom, but around the shade it still holds the
-// bottom: these points on the water's plane, in blocks (x, z) with their weight, stand in for it. Twelve
-// in three rings: 0.8 blocks away, 2 blocks away on the diagonals and 4 blocks away, nearer ones counting
-// more. Fixed in the world, so the result never crawls as the camera moves.
-const vec3 THICKNESS_RING[12] = vec3[12](
+// bottom: these points on the water's plane, in blocks (x, z) with their weight, stand in for it. Sixteen
+// in four rings: 0.8 blocks away, 2 blocks away on the diagonals, 4 blocks away and 8 blocks away on the
+// diagonals, nearer ones counting more. Fixed in the world, so the result never crawls as the camera moves.
+const vec3 THICKNESS_RING[16] = vec3[16](
     vec3(0.8, 0.0, 1.0), vec3(-0.8, 0.0, 1.0), vec3(0.0, 0.8, 1.0), vec3(0.0, -0.8, 1.0),
     vec3(1.414, 1.414, 0.7), vec3(-1.414, 1.414, 0.7), vec3(1.414, -1.414, 0.7), vec3(-1.414, -1.414, 0.7),
-    vec3(4.0, 0.0, 0.5), vec3(-4.0, 0.0, 0.5), vec3(0.0, 4.0, 0.5), vec3(0.0, -4.0, 0.5)
+    vec3(4.0, 0.0, 0.5), vec3(-4.0, 0.0, 0.5), vec3(0.0, 4.0, 0.5), vec3(0.0, -4.0, 0.5),
+    vec3(5.657, 5.657, 0.35), vec3(-5.657, 5.657, 0.35), vec3(5.657, -5.657, 0.35), vec3(-5.657, -5.657, 0.35)
 );
 
 // Blocks of water under this point of the surface, along the light, read from the shadow map: it holds
-// only opaque terrain, so under open water it holds the bottom. known says how far that can be trusted,
-// 0 .. 1: nothing without the map or outside it. Where something opaque hangs over the water the map
-// holds that instead, and the bottom around the shade (THICKNESS_RING) stands in: dappled shade under
+// only opaque terrain, so under open water it holds the bottom. found says how much of that was found,
+// 0 .. 1; trust how far the map can be gone by at all: 0 without the map or outside it, fading out towards
+// the map's edge, so no ring shows where it ends, and as the light fades at dusk or in rain, so the water
+// doesn't change at once when the map stops being drawn. Where something opaque hangs over the water the
+// map holds that instead, and the bottom around the shade (THICKNESS_RING) stands in: dappled shade under
 // leaves and narrow shade along a bank keep the clear water around them, and only the middle of a wide
-// shade, with no bottom in sight, goes back to the surface as it was. known also fades out towards the
-// map's edge, so no ring shows where it ends, and as the light fades at dusk or in rain, so the water
-// doesn't change at once when the map stops being drawn. The four texels around the point are weighed
-// bilinearly, so shorelines don't step texel by texel.
-float waterThickness(vec3 surfacePos, out float known) {
-    known = 0.0;
+// shade, with no bottom in sight, is left without it (waterDepthBelow). The four texels around the point
+// are weighed bilinearly, so shorelines don't step texel by texel.
+float waterThickness(vec3 surfacePos, out float found, out float trust) {
+    found = 0.0;
+    trust = 0.0;
     if (EtnaLook2.w < 0.5) {
         return 0.0;
     }
@@ -530,13 +532,13 @@ float waterThickness(vec3 surfacePos, out float known) {
             weight += w;
         }
     }
-    float found = weight;
+    found = weight;
     if (weight < 0.999) {
         vec3 alongX = EtnaShadowMat[0].xyz;
         vec3 alongZ = EtnaShadowMat[2].xyz;
         float ringSum = 0.0;
         float ringWeight = 0.0;
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 16; i++) {
             vec3 tap = THICKNESS_RING[i];
             vec4 p = etnaShadowMapPoint(clip + alongX * tap.x + alongZ * tap.y);
             if (p.w < 1.0) {
@@ -554,8 +556,62 @@ float waterThickness(vec3 surfacePos, out float known) {
         sum += share * ringSum / max(ringWeight, 1e-4);
         found = weight + share;
     }
-    known = found * (1.0 - smoothstep(0.85, 1.0, map.w)) * smoothstep(0.002, 0.03, ETNA_LIGHT_STRENGTH);
+    trust = (1.0 - smoothstep(0.85, 1.0, map.w)) * smoothstep(0.002, 0.03, ETNA_LIGHT_STRENGTH);
     return sum / max(found, 1e-4);
+}
+
+// Blocks of water taken to lie under a point whose bottom the map can't show, in the middle of a wide shade
+// or under a roof: about a lake's depth. Before 0.8.1 such water went back to the plain look of water without
+// depth, which lets far less through, and shade on a lake turned it murky in the shadow's shape.
+const float WATER_UNSEEN_DEPTH = 4.0;
+
+// Worked out once per fragment by waterDepthBelow, for waterBodyShadow and waterFromAbove.
+float etnaWaterBelow = -1.0;
+float etnaWaterTrust = 0.0;
+
+// Blocks of water straight down from this point of the surface, and (trust) how far the depth can be gone
+// by at all (waterThickness).
+float waterDepthBelow(out float trust) {
+    if (etnaWaterBelow < 0.0) {
+        float found;
+        float alongLight = waterThickness(etnaViewPos, found, etnaWaterTrust);
+        etnaWaterBelow = mix(WATER_UNSEEN_DEPTH, alongLight * max(ETNA_LIGHT_DIR.y, 0.05), found);
+    }
+    trust = etnaWaterTrust;
+    return etnaWaterBelow;
+}
+
+// The sun's share in the light the water scatters back up from under its surface, which is what its own
+// colour is (the body in waterFromAbove). That light comes from all the way down to the bottom, more of it
+// from near the surface the murkier the water, so a tree's shadow on clear shallow water is the shadow on
+// the bottom seen through it, and on murky or deep water a soft shadow in the water itself. Before 0.8.1
+// the surface took the sharp shadow of its own point, a second copy of every shadow next to the one on
+// the bottom (shifted from it by the depth, the more the lower the sun), and the two crossed each other out
+// in strange shapes. Four points down the view's way into the water, each at an equal share of the light
+// scattered back above the bottom, each the bilinear blend of four texels (shadowSoftAt). Seen from
+// below, or past the map, the surface's own shadow as before.
+float waterBodyShadow(vec3 normal) {
+    if (normal.y < 0.8 || cameraInAir() < 0.5) {
+        return shadowVisibility(normal, false);
+    }
+    float trust;
+    float below = waterDepthBelow(trust);
+    if (trust <= 0.0) {
+        return shadowVisibility(normal, false);
+    }
+    vec3 down = refract(normalize(etnaViewPos), vec3(0.0, 1.0, 0.0), 1.0 / WATER_IOR);
+    float cosDown = max(-down.y, 0.1);
+    // Light scattered back from z blocks down went z / sin(sun) blocks through the water on its way down
+    // and comes z / cos(view) blocks back up: green's extinction over both, per block of depth.
+    float perDepth = waterExtinction(EtnaWaterLook.x).g * (1.0 / max(ETNA_LIGHT_DIR.y, 0.1) + 1.0 / cosDown);
+    float total = 1.0 - exp(-perDepth * below);
+    float lit = 0.0;
+    for (int i = 0; i < 4; i++) {
+        float z = -log(1.0 - (float(i) + 0.5) * 0.25 * total) / perDepth;
+        lit += shadowSoftAt(etnaViewPos + down * (z / cosDown));
+    }
+    lit *= 0.25;
+    return trust < 1.0 ? mix(shadowVisibility(normal, false), lit, trust) : lit;
 }
 
 // ---- Shoreline foam -----------------------------------------------------------------------------------
@@ -677,20 +733,20 @@ vec3 foamLight() {
 // The water surface seen from above: shallow water clear, deep water the colour of the water, foam along
 // the shore. vanillaAlpha: the water texture's alpha; lit: the surface as shadeTerrain lit it, whose
 // brightness (shade of trees and cliffs, time of day) the water's body takes, with the hue of the water's
-// own tint. fresnel and reflection: the sky's reflection, glint: the sun's, with the glitter. p and t:
+// own tint (lit took the shadow in the water under the surface, waterBodyShadow). fresnel and reflection: the sky's reflection, glint: the sun's, with the glitter. p and t:
 // where (world xz) and when the foam is worked out; level: whether the surface lies flat (no foam on water
 // flowing down a slope). The blend then gives
 // behind * (1 - a)(1 - F) + body * (1 - T)(1 - F) + reflection * F + glint, with T what the water lets
-// through on the way to the bottom and back up to the eye, and a its average. Where the depth is unknown
-// the body is the lit texture's colour and a its alpha: the look water had before it had depth, with what
+// through on the way to the bottom and back up to the eye, and a its average. Where the map can't be gone
+// by (past it, without shadows, at dusk) the body is the lit texture's colour and a its alpha: the look
+// water had before it had depth, with what
 // it mirrors taken out of what it lets through, so the sky's reflection is always exactly reflection * F
 // (the water reflections pass, post/water_ssr.fsh, takes that out again where it finds the world instead).
 vec4 waterFromAbove(float vanillaAlpha, vec3 lit, vec3 viewDir, vec3 reflection, float fresnel, vec3 glint, vec2 p, float t, bool level) {
     float plainAlpha = 1.0 - (1.0 - vanillaAlpha) * (1.0 - fresnel);
     vec4 surface = etnaFitAlpha((lit * (vanillaAlpha * (1.0 - fresnel)) + reflection * fresnel + glint) / max(plainAlpha, 0.05), plainAlpha);
     float known;
-    float alongLight = waterThickness(etnaViewPos, known);
-    float vertical = alongLight * max(ETNA_LIGHT_DIR.y, 0.05);
+    float vertical = waterDepthBelow(known);
     // Mixed as the blend sees them (colour times alpha), so every hand-over stays smooth.
     vec3 covered = surface.rgb * surface.a;
     float outAlpha = surface.a;
