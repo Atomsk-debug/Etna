@@ -106,9 +106,9 @@ Lower presets are faster; Low has no shadows and no anti-aliasing. See [docs/ben
 Yes. Etna replaces none of the game's files: with F7 off it draws with the game's own shaders, textures and
 models. On a Mac, Half resolution applies only when Etna is on as the game starts.
 
-**Why isn't it on Modrinth or CurseForge?**
-A few parts come from Photon Shaders, whose licence doesn't allow those sites without its author's permission.
-Releases are here on GitHub.
+**Is it on Modrinth or CurseForge?**
+Not yet. Releases are here on GitHub. Since 0.9.0 Etna has no code from other shader packs, so nothing stands in
+the way.
 
 **Something looks wrong.**
 Press F7: if it goes away, it's Etna. Note where and when it happens (time of day, near or far, which blocks) and
@@ -120,8 +120,6 @@ No. Etna works on its own; Vesuvio makes the game, and Etna's shadows, faster.
 ## Credits and licence
 
 Etna's own code is under the MIT licence, see [LICENSE](LICENSE). Its terrain and cloud shaders are based on
-Minecraft's vanilla shaders (© Mojang AB), which Etna's licence doesn't cover. A few small parts are ported from
-[Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge (temporal anti-aliasing, the order of
-the light shafts' half-resolution pixels) and stay under the Photon Shaders License (`LICENSE-PHOTON.txt`).
-Complementary Reimagined inspired the look; none of its code is used. Everything taken from other projects and
+Minecraft's vanilla shaders (© Mojang AB), which Etna's licence doesn't cover. No code from other shader packs
+is used. Complementary Reimagined inspired the look; none of its code is used. Everything taken from other projects and
 every technique Etna follows is listed in [CREDITS.md](CREDITS.md).

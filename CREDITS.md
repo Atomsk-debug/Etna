@@ -1,25 +1,30 @@
 # Credits
 
-Etna is original code under the MIT licence (`LICENSE`), with these exceptions: the temporal anti-aliasing
-pass is ported from another shader pack, under that pack's own licence; the sky's star hash is David Hoskins's, under the MIT licence; and the terrain and
-cloud shaders are based on Minecraft's own, which Etna's licence doesn't cover.
+Etna is original code under the MIT licence (`LICENSE`), with these exceptions: the sky's star hash is David
+Hoskins's, under the MIT licence; and the terrain and cloud shaders are based on Minecraft's own, which Etna's
+licence doesn't cover. No code from other shader packs is used.
 
 ## Code ported from other projects
 
 | Etna file | Source | Licence |
 |---|---|---|
-| `src/main/resources/assets/etna/shaders/post/taa.fsh` | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `program/c4_taa_exposure.fsh` (TAA, neighbourhood and variance clipping, offcenter rejection) and `include/utility/bicubic.glsl` (fast Catmull-Rom history filter), adapted to Minecraft's reversed depth buffer and Etna's camera matrices | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/core/sky.fsh`: `hash33` (where the stars sit, how bright they are, their colour) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash33`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
 | `src/main/resources/assets/etna/shaders/core/sky.vsh`: `hash41` (when and where a shooting star flares, which way it falls) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash41`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
-| `src/main/resources/assets/etna/shaders/post/shafts.fsh`: `SUBPIXEL` (the order in which the light shafts' half-resolution pixels take turns) | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `checkerboard.glsl`, the same 2×2 order | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/core/terrain.vsh`, `terrain.fsh`, `clouds.vsh`, `clouds.fsh`, `weather.vsh`, `weather.fsh` | Minecraft's vanilla `terrain`, `clouds` and `particle` core shaders, which Etna replaces while it is on and extends (`weather` is made from `particle`, which vanilla draws rain and snow with) | Based on Minecraft's vanilla shader, (c) Mojang AB, not covered by Etna's MIT licence |
 
-The Photon Shaders License allows redistributing modified portions, except on platforms that pay creators
-(Modrinth, CurseForge) without SixthSurge's written permission, and never for money. Builds of Etna that
-contain these parts fall under those terms; publishing Etna on Modrinth or CurseForge needs that permission
-first, or original replacements for them.
-
 ## Techniques Etna's own code follows
+
+* Temporal anti-aliasing and upsampling (`taa.fsh`, since 0.9.0 Etna's own; before, a port from Photon Shaders):
+  each frame rebuilt from the 3x3 level pixels around the screen pixel, weighted by their jittered distance to its
+  centre (Yang, Nehab, Sander, Sitthi-amorn, Lawrence and Hoppe, "Amortized Supersampling", 2009; Unreal Engine's
+  TAAU), the history's weight kept in alpha; nearest-depth reprojection and YCoCg (Brian Karis, "High Quality
+  Temporal Supersampling", SIGGRAPH 2014), a 1 / (1 + luma) weighted blend (Karis 2014), the variance box (Marco
+  Salvi, "An Excursion in Temporal Supersampling", GDC 2016), clipping along a line (Lasse Jon Fuglsang Pedersen,
+  "Temporal Reprojection Anti-Aliasing in INSIDE", GDC 2016), Catmull-Rom history from five bilinear reads (Jorge
+  Jimenez, "Filmic SMAA", SIGGRAPH 2016). Jitter steps for a smaller render after AMD FidelityFX Super Resolution 2's
+  documentation (MIT).
+* Light shafts' half-resolution order (`shafts.fsh`): the 2x2 cells of Bryce Bayer's ordered-dither matrix
+  ("An optimum method for two-level rendition of continuous-tone pictures", 1973).
 
 * Ambient occlusion (`world_light.fsh`): disc sampling in the surface plane with an elevation-angle weight, after
   Photon's SSAO (`include/lighting/ao/ssao.glsl`).

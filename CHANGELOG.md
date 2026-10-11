@@ -2,6 +2,14 @@
 
 Every release is for Minecraft 26.4-snapshot-3 with Fabric. Versions: the middle number goes up for new features, the last one for fixes. Jars are on the [Releases](https://github.com/Atomsk-debug/Etna/releases) page.
 
+## 0.9.0 (unreleased)
+
+Faster with World Resolution, and Etna's own anti-aliasing.
+
+* **World Resolution (new, General page, 50 to 100%).** Draws the world at fewer pixels and builds the full-size picture back up in Etna's anti-aliasing, which moves the camera by a different fraction of a pixel every frame and puts the frames together at full size. Most of Etna's cost is per pixel, so at 75% the world shades a little over half the pixels. Textures keep their full-size detail, and the hand, the menus and the HUD stay sharp at full size. Needs anti-aliasing, which every Quality but Low has. The benchmark has a step for it.
+* **New anti-aliasing, Etna's own.** Steadier and sharper than 0.8's: in Etna's test bench about a third less flicker and error, edges closer to a supersampled picture, and less trailing behind moving things. Glints and sparkles brighter than white no longer flash through it.
+* **No code from other shader packs any more.** The anti-aliasing and the light shafts' pixel order were the last parts from Photon Shaders; with 0.8.1's own shadow warp and water Fresnel, Etna is now entirely its own code (and Minecraft's shaders it builds on), so it can go on Modrinth and CurseForge. `LICENSE-PHOTON.txt` is gone.
+
 ## 0.8.1 (unreleased)
 
 Fixes for 0.8.0's water, and shadows that soften with distance.
