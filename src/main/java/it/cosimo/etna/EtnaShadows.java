@@ -225,6 +225,9 @@ public final class EtnaShadows {
 	private static final @Nullable GpuTexture[] textures = new GpuTexture[2];
 	private static final @Nullable GpuTextureView[] views = new GpuTextureView[2];
 	private static @Nullable GpuBuffer ubo;
+	/** ubo.slice(), kept for the buffer it was made of (uboSlice). */
+	private static @Nullable GpuBufferSlice uboSlice;
+	private static @Nullable GpuBuffer uboSliceOf;
 	private static @Nullable ProjectionMatrixBuffer projectionBuffer;
 	private static int textureSize;
 
@@ -1270,9 +1273,19 @@ public final class EtnaShadows {
 		GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 		pass.setUniform("EtnaShadowSampler", views[primary], nearest);
 		pass.setUniform("EtnaShadowSampler2", views[1 - primary], nearest);
-		pass.setUniform("EtnaShadow", ubo.slice());
+		pass.setUniform("EtnaShadow", uboSlice());
 		// Bilinear, and wrapping round as the clouds repeat.
 		pass.setUniform("EtnaCloudSampler", EtnaClouds.texture(), RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR));
+	}
+
+	/** The whole block as one slice, made once per buffer: bindLight runs for every lit entity draw. */
+	private static GpuBufferSlice uboSlice() {
+		GpuBuffer buffer = ubo;
+		if (uboSliceOf != buffer || uboSlice == null) {
+			uboSlice = buffer.slice();
+			uboSliceOf = buffer;
+		}
+		return uboSlice;
 	}
 
 	public static void endTerrain() {

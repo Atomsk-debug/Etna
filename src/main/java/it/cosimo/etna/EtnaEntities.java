@@ -29,7 +29,7 @@ import org.jspecify.annotations.Nullable;
  * Only draws Etna should light are swapped: while Etna's terrain block is ready this frame (EtnaShadows.lightBlock,
  * so Etna is on and in a world), Entity Lighting is on, and the draw is part of the level (from the shadow pass
  * hook in LevelRendererMixin until the hand) or of the first-person hand (GameRendererMixin, from right before the
- * hand is drawn until the end of renderLevel), never the menus: the inventory's items and mobs, the item atlas and
+ * hand is drawn until it is drawn), never the menus or the screen effects: the inventory's items and mobs, the item atlas and
  * picture-in-picture use their own projection and lights, and draw after the level. The hand's copies define
  * ETNA_HAND: it is drawn close to the eye with its own projection, so it is lit as if it stood at the camera.
  * Only the pipelines in pipelines() are swapped, by identity (the glint variants share their locations with the
@@ -39,14 +39,17 @@ import org.jspecify.annotations.Nullable;
  *
  * Both injections are optional (require = 0): if the game changes under them, entities simply keep vanilla's light.
  * Nothing is swapped until the binding injection has run once, so a copy is never drawn without its block; if
- * neither ever runs while Etna would light entities, that is logged once. A copy that does not compile leaves its
- * pipeline vanilla's for the session (until a resource reload), an error leaves all of them vanilla's.
+ * neither ever runs while Etna would light entities, that is logged once. The copies are compiled a couple a frame
+ * as the level starts (warmUp), not at their first draw. A copy that does not compile leaves its pipeline
+ * vanilla's there (level or hand) until a resource reload, an error leaves all of them vanilla's.
  */
 public final class EtnaEntities {
 	private static final Identifier ENTITY_SHADER = Identifier.fromNamespaceAndPath(EtnaClient.MOD_ID, "core/entity");
 	private static final Identifier ITEM_SHADER = Identifier.fromNamespaceAndPath(EtnaClient.MOD_ID, "core/item");
 	/** Frames of the level drawn with Entity Lighting active before a hook that never ran is logged. */
 	private static final int HOOK_GRACE_FRAMES = 600;
+	/** Copies built and compiled ahead of their first draw, per frame of the level (warmUp). */
+	private static final int WARM_UP_PER_FRAME = 2;
 
 	/** Which part of the frame is being drawn, for which copies, if any, to draw with. */
 	private enum Phase { NONE, WORLD, HAND }
@@ -54,10 +57,16 @@ public final class EtnaEntities {
 	private static Phase phase = Phase.NONE;
 	/** The vanilla pipelines Etna lights, each with the shader of its copy; made on first use (pipelines). */
 	private static @Nullable Map<RenderPipeline, Identifier> lit;
+	/** The same pipelines in a fixed order, for warmUp. */
+	private static RenderPipeline @Nullable [] litOrder;
+	/** Copies that compiled, by the vanilla pipeline they stand in for: until the next resource reload. */
 	private static final Map<RenderPipeline, RenderPipeline> worldCopies = new IdentityHashMap<>();
 	private static final Map<RenderPipeline, RenderPipeline> handCopies = new IdentityHashMap<>();
-	/** Vanilla pipelines whose copy did not compile: drawn as vanilla's until the next resource reload. */
-	private static final Set<RenderPipeline> failed = new ReferenceOpenHashSet<>();
+	/** Vanilla pipelines whose copy did not compile, for the level and for the hand: drawn as vanilla's until the next resource reload. */
+	private static final Set<RenderPipeline> failedWorld = new ReferenceOpenHashSet<>();
+	private static final Set<RenderPipeline> failedHand = new ReferenceOpenHashSet<>();
+	/** How many copies warmUp has prepared since the last resource reload, world and hand ones in turn. */
+	private static int warmed;
 	/** Set after an error: vanilla's light on every entity for the rest of the session. */
 	private static boolean broken;
 	/** Whether each injection has run at least once: the pipeline swap, and the binding after it. */
@@ -77,6 +86,7 @@ public final class EtnaEntities {
 	 */
 	public static void beginWorld() {
 		phase = Phase.WORLD;
+		warmUp();
 		if (!hooksWarned && !(swapHookSeen && bindHookSeen) && wanted() && ++framesWithoutHooks > HOOK_GRACE_FRAMES) {
 			hooksWarned = true;
 			EtnaClient.LOGGER.warn("Etna: the entity lighting hook did not run (pipeline swap {}, binding {}); entities, items and the hand"
@@ -89,7 +99,10 @@ public final class EtnaEntities {
 		phase = Phase.HAND;
 	}
 
-	/** GameRendererMixin, at the end of renderLevel and at the start of every frame: the menus and anything else are vanilla's. */
+	/**
+	 * GameRendererMixin, at the end of renderLevel, at the start of every frame and right after the hand is drawn
+	 * (before the screen effects, whose totem is lit as vanilla's): the menus and anything else are vanilla's.
+	 */
 	public static void endLevel() {
 		phase = Phase.NONE;
 	}
@@ -106,27 +119,69 @@ public final class EtnaEntities {
 	public static RenderPipeline pipelineFor(RenderPipeline vanilla) {
 		swapHookSeen = true;
 		swapped = false;
-		if (phase == Phase.NONE || !bindHookSeen || !wanted() || failed.contains(vanilla)) {
+		if (phase == Phase.NONE || !bindHookSeen || !wanted()) {
 			return vanilla;
+		}
+		boolean hand = phase == Phase.HAND;
+		RenderPipeline copy = (hand ? handCopies : worldCopies).get(vanilla);
+		if (copy == null) {
+			copy = prepare(vanilla, hand);
+			if (copy == null) {
+				return vanilla;
+			}
+		}
+		swapped = true;
+		return copy;
+	}
+
+	/**
+	 * The copy of {@code vanilla} for the level or the hand, built and compiled now and kept until the next resource
+	 * reload; null if {@code vanilla} is not one Etna lights, its copy did not compile, or an error left entities
+	 * vanilla's. The compile is checked once here, not at every draw.
+	 */
+	private static @Nullable RenderPipeline prepare(RenderPipeline vanilla, boolean hand) {
+		Set<RenderPipeline> failed = hand ? failedHand : failedWorld;
+		if (broken || failed.contains(vanilla)) {
+			return null;
 		}
 		try {
 			Identifier shader = pipelines().get(vanilla);
 			if (shader == null) {
-				return vanilla;
+				return null;
 			}
-			boolean hand = phase == Phase.HAND;
-			RenderPipeline copy = (hand ? handCopies : worldCopies).computeIfAbsent(vanilla, p -> makeCopy(p, shader, hand));
+			RenderPipeline copy = makeCopy(vanilla, shader, hand);
 			if (RenderSystem.getCompiledPipelineNullable(copy) == null) {
 				failed.add(vanilla);
 				EtnaClient.LOGGER.error("Etna: {} did not compile, those entities keep vanilla's light", copy.getLocation());
-				return vanilla;
+				return null;
 			}
-			swapped = true;
+			(hand ? handCopies : worldCopies).put(vanilla, copy);
 			return copy;
 		} catch (RuntimeException e) {
 			broken = true;
 			EtnaClient.LOGGER.error("Etna: lighting entities failed, entities, items and the hand keep vanilla's light for this session", e);
-			return vanilla;
+			return null;
+		}
+	}
+
+	/**
+	 * At the start of the level, a couple of copies a frame are compiled before anything draws with them, all of
+	 * them over the first frames in a world and after a resource reload. Compiled at their first draw instead, each
+	 * would stall the game when a new kind of mob, an enchanted item or the hand first came into view, which on some
+	 * drivers takes a good part of a second.
+	 */
+	private static void warmUp() {
+		if (!wanted()) {
+			return;
+		}
+		pipelines();
+		RenderPipeline[] order = litOrder;
+		for (int i = 0; i < WARM_UP_PER_FRAME && order != null && warmed < 2 * order.length; i++, warmed++) {
+			RenderPipeline vanilla = order[warmed >> 1];
+			boolean hand = (warmed & 1) == 1;
+			if (!(hand ? handCopies : worldCopies).containsKey(vanilla)) {
+				prepare(vanilla, hand);
+			}
 		}
 	}
 
@@ -185,6 +240,7 @@ public final class EtnaEntities {
 			}) {
 				table.put(p, ITEM_SHADER);
 			}
+			litOrder = table.keySet().toArray(new RenderPipeline[0]);
 			lit = table;
 		}
 		return table;
@@ -206,11 +262,14 @@ public final class EtnaEntities {
 		if (hand) {
 			builder.withShaderDefine("ETNA_HAND");
 		}
-		// The glint variants share their locations with the plain pipelines: their copies get names of their own.
+		// The glint variants share their locations with the plain pipelines (or the special glint with the plain
+		// glint): their copies get names of their own.
 		String path = vanilla.getLocation().getPath();
 		var flags = vanilla.getShaderDefines().flags();
-		if (!path.contains("glint")) {
-			path += flags.contains("GLINT_SPECIAL") ? "_glint_special" : flags.contains("GLINT") ? "_glint" : "";
+		if (flags.contains("GLINT_SPECIAL")) {
+			path += path.contains("glint") ? "_special" : "_glint_special";
+		} else if (flags.contains("GLINT") && !path.contains("glint")) {
+			path += "_glint";
 		}
 		return builder
 			.withBindGroupLayout(EtnaShadows.LAYOUT)
@@ -218,8 +277,15 @@ public final class EtnaEntities {
 			.build();
 	}
 
-	/** EtnaFrame.resourcesReloaded: the shaders were recompiled, so a copy that failed gets another try. */
+	/**
+	 * EtnaFrame.resourcesReloaded: the shaders were recompiled, so every copy is built and checked again, and one
+	 * that failed gets another try.
+	 */
 	static void resourcesReloaded() {
-		failed.clear();
+		worldCopies.clear();
+		handCopies.clear();
+		failedWorld.clear();
+		failedHand.clear();
+		warmed = 0;
 	}
 }

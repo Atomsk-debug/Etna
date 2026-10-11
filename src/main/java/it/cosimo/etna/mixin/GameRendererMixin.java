@@ -132,6 +132,16 @@ public abstract class GameRendererMixin {
 		EtnaEntities.beginHand();
 	}
 
+	@Inject(
+		method = "render3dHud",
+		at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/GameRenderer;renderItemInHand", shift = At.Shift.AFTER),
+		require = 0
+	)
+	private void etna$handDrawn(CallbackInfo ci) {
+		// The screen effects after the hand (the totem's item) keep vanilla's light, as in the menus (EtnaEntities).
+		EtnaEntities.endLevel();
+	}
+
 	@Redirect(
 		method = "render",
 		at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;blitEntityOutline()V")
