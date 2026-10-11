@@ -805,8 +805,15 @@ void main() {
     // discard they are undefined next to cut-out edges (leaves, plants).
     vec3 posDx = dFdx(etnaViewPos);
     vec3 posDy = dFdy(etnaViewPos);
-    vec2 uvDx = dFdx(texCoord0);
-    vec2 uvDy = dFdy(texCoord0);
+    // With a render scale (EtnaScale) a pixel here covers more of the screen than the picture's own pixels; the
+    // texture's detail is picked for the screen's pixels, so the textures stay as sharp as at full size and the
+    // anti-aliasing, which sees every part of each screen pixel over a few frames, keeps them steady.
+    // The water's average (etnaWaterTexture, etnaWaterSide) compares the texture's steps with the position's, so it
+    // takes the derivatives as they are.
+    vec2 uvDxPicture = dFdx(texCoord0);
+    vec2 uvDyPicture = dFdy(texCoord0);
+    vec2 uvDx = uvDxPicture * ETNA_RENDER_SCALE;
+    vec2 uvDy = uvDyPicture * ETNA_RENDER_SCALE;
     #ifndef OIT_ALPHA_ONLY
     etnaPixelFootprint = max(length(posDx), length(posDy));
     etnaTexelFootprint = max(length(uvDx * vec2(TextureSize)), length(uvDy * vec2(TextureSize)));
@@ -827,16 +834,16 @@ void main() {
         vec3 inBlock = fract(etnaViewPos - CameraOffset);
         if (faceNormal.y >= max(faceNormal.x, faceNormal.z)) {
             if (faceNormal.y > 1e-3 * length(posDx.xz) * length(posDy.xz)) {
-                color = etnaWaterTexture(uvDx, uvDy, posDx, posDy);
+                color = etnaWaterTexture(uvDxPicture, uvDyPicture, posDx, posDy);
                 sampled = true;
             }
         } else if (faceNormal.x >= faceNormal.z) {
             if (faceNormal.x > 1e-3 * length(posDx.zy) * length(posDy.zy)) {
-                color = etnaWaterSide(uvDx, uvDy, posDx.zy, posDy.zy, inBlock.zy);
+                color = etnaWaterSide(uvDxPicture, uvDyPicture, posDx.zy, posDy.zy, inBlock.zy);
                 sampled = true;
             }
         } else if (faceNormal.z > 1e-3 * length(posDx.xy) * length(posDy.xy)) {
-            color = etnaWaterSide(uvDx, uvDy, posDx.xy, posDy.xy, inBlock.xy);
+            color = etnaWaterSide(uvDxPicture, uvDyPicture, posDx.xy, posDy.xy, inBlock.xy);
             sampled = true;
         }
     }

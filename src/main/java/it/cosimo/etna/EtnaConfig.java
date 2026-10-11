@@ -216,6 +216,13 @@ public final class EtnaConfig {
 	public static float sunPathTilt = SUN_PATH_TILT_DEFAULT;
 	/** macOS: open the window without Retina pixel density, so the game draws a quarter of the pixels. */
 	public static boolean halfResolution = false;
+	/**
+	 * How wide and tall the world is drawn, as a share of the screen (EtnaScale): below 1 the level is drawn at fewer
+	 * pixels and Etna's anti-aliasing builds the full-size picture from it over several frames. Only with
+	 * anti-aliasing on; the hand and the HUD always stay at full size.
+	 */
+	public static float renderScale = 1.0F;
+	public static final float RENDER_SCALE_MIN = 0.5F;
 	/** The performance log: a line in latest.log every few seconds while in a world. */
 	public static Profiling profiling = Profiling.OFF;
 	/** Skip shadow casters that can't shadow anything on screen. Only in the file, to compare with and without. */
@@ -395,6 +402,7 @@ public final class EtnaConfig {
 			return;
 		}
 		halfResolution = bool(props, "halfResolution", false);
+		renderScale = number(props, "renderScale", 1.0F, RENDER_SCALE_MIN, 1.0F);
 		sunPathTilt = number(props, "sunPathTilt", SUN_PATH_TILT_DEFAULT, 0.0F, 45.0F);
 		visibility.set(number(props, "visibility", VISIBILITY_DEFAULT, visibility.min, visibility.max));
 		// 0.8.0 MOOD
@@ -453,6 +461,7 @@ public final class EtnaConfig {
 		props.setProperty("enabled", Boolean.toString(enabled));
 		props.setProperty("toggleKey", Integer.toString(toggleKey));
 		props.setProperty("halfResolution", Boolean.toString(halfResolution));
+		props.setProperty("renderScale", Float.toString(renderScale));
 		props.setProperty("sunPathTilt", Float.toString(sunPathTilt));
 		props.setProperty("visibility", Float.toString(visibility.value));
 		// 0.8.0 MOOD
@@ -497,7 +506,8 @@ public final class EtnaConfig {
 				+ " shadowDistance and antiAliasing are only read back with quality=custom). profile: natural | soft | vivid"
 				+ " | cinematic | custom (the look values are only read back with profile=custom; eyeAdaptation: 0 (off) .. 1)."
 				+ " toggleKey: key code, F7 by"
-				+ " default. halfResolution: macOS only, applies after a restart. sunPathTilt: 0 to 45, how many degrees the"
+				+ " default. halfResolution: macOS only, applies after a restart. renderScale: 0.5 .. 1, the share of the screen's"
+				+ " width and height the world is drawn at (with anti-aliasing on; 1: full size). sunPathTilt: 0 to 45, how many degrees the"
 				+ " path of the sun and the moon leans to the south (0 is vanilla's path). visibility: 0 .. 1, how much better caves,"
 				+ " nights and shade read (0: as in 0.7.0), kept whatever the profile. profiling: off | summary (a performance line in"
 				+ " latest.log every few seconds). shadowCulling: true | false (false draws every shadow caster, to compare)."

@@ -25,6 +25,8 @@ uniform sampler2D DepthSampler;
 
 layout(std140) uniform SamplerInfo {
     vec2 OutSize;
+    vec2 InSize;
+    vec2 DepthSize;
 };
 
 // Most motes drawn at once, and the tiles the screen is cut into for them (EtnaMotes.java has the same).
@@ -53,7 +55,8 @@ vec3 motes(ivec2 pixel) {
     if (mask == 0u) {
         return vec3(0.0);
     }
-    float depth = texelFetch(DepthSampler, pixel, 0).r;
+    // The depth is the level's: smaller than this pass's pixels with a render scale (EtnaScale).
+    float depth = texelFetch(DepthSampler, min(ivec2(texCoord * DepthSize), ivec2(DepthSize) - 1), 0).r;
     float surface = etnaIsSky(depth) ? 1.0e6 : length(etnaPosition(texCoord, depth));
     vec3 light = vec3(0.0);
     for (int i = 0; mask != 0u; i++, mask >>= 1u) {

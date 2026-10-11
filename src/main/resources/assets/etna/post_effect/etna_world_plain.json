@@ -1,12 +1,12 @@
 {
     "targets": {
         "shafts": {
-            "width": 960,
-            "height": 540
+            "width": 20960,
+            "height": 20540
         },
         "water_ssr": {
-            "width": 960,
-            "height": 540
+            "width": 20960,
+            "height": 20540
         },
         "lit": {}
     },

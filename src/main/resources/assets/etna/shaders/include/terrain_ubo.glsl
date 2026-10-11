@@ -34,7 +34,7 @@ layout(std140) uniform EtnaShadow {
     mat4 EtnaShadowMat2; // 432. the second shadow map (EtnaShadowSampler2), as EtnaShadowMat for the first, while the terrain fades from one to the other as the sun moves (EtnaShadows.chooseMap); EtnaShadowMat the rest of the time
     vec4 EtnaShadowFade; // 496. x: how much of the second map shadowVisibility and leafBacklight mix in (0 .. 0.5; 0: the first alone), y: the Nether's lava light from below in vanilla's units (0 outside the Nether; EtnaAir.lavaLight, terrain_dark.glsl), z: the lava sea's surface as a world height, w: reserved (0)
     vec4 EtnaSurface;    // 512. settings menu (EtnaMaterials.java). x: materials, y: puddles, z: sparkles, w: glowing flowers (each 0 .. 1)
-    vec4 EtnaSurface2;   // 528. x: how much the bright specks of glowing blocks glow (the glowing blocks setting, 0 .. 1), yzw: reserved (0)
+    vec4 EtnaSurface2;   // 528. x: how much the bright specks of glowing blocks glow (the glowing blocks setting, 0 .. 1), y: the share of the screen's width the level is drawn at (EtnaScale: 1 at full size), zw: this frame's anti-aliasing jitter, in the level's pixels (EtnaFrame: x right, y down; 0 without anti-aliasing)
     vec4 EtnaNight;      // 544. the aurora's light on the land (EtnaSky.writeNight). rgb: its colour, luma 1 (a green with a little violet), w: how much aurora is in the sky (0 .. 1, eased over the biome, the moon, the night and the weather; 0 by day, in rain, outside the overworld and with Etna or the Aurora setting off)
     vec4 EtnaWaterSsr;   // 560. settings menu (EtnaWaterSsr.java). x: shoreline foam (0 .. 1), y: glitter (0 .. 1); for the reflections pass (water_ssr.fsh): z: estimate of etnaDaylight, the lightmap under the open sky (0 .. 1), w: the camera's height above a whole block (camera y - floor(camera y))
 };
@@ -65,6 +65,9 @@ layout(std140) uniform EtnaShadow {
 #define ETNA_LEAF_GLOW EtnaMaterial.z
 #define ETNA_TORCH_WARMTH EtnaMaterial.w
 #define ETNA_WETNESS EtnaHandPos.w
+// The level's render scale (EtnaScale); 0 only in a block written before 0.9.0, read as full size.
+#define ETNA_RENDER_SCALE (EtnaSurface2.y > 0.0 ? EtnaSurface2.y : 1.0)
+#define ETNA_JITTER_NOW EtnaSurface2.zw
 // Etna's sky model (sky.glsl): whether it describes this frame's sky (its skylight is never black, and
 // EtnaSky.java leaves every sky field at 0 when it has no model: no overworld sky, or the model failed),
 // the colours of the sunlight and the skylight, and whether Etna drew the sky this frame.
@@ -90,6 +93,8 @@ layout(std140) uniform EtnaShadow {
 #define ETNA_LEAF_GLOW 0.6
 #define ETNA_TORCH_WARMTH 0.0
 #define ETNA_WETNESS 0.0
+#define ETNA_RENDER_SCALE 1.0
+#define ETNA_JITTER_NOW vec2(0.0)
 // No sky model here: 0.6.0's colours (sunColor and skyColor in terrain.fsh), and vanilla's fog colour.
 #define ETNA_SKY_MODEL false
 #define ETNA_SKY_DRAWN false

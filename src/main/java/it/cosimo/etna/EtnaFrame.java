@@ -1,9 +1,12 @@
 package it.cosimo.etna;
 
 import java.lang.ref.WeakReference;
+import java.util.Set;
 
+import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import com.mojang.blaze3d.resource.ResourceHandle;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -19,8 +22,8 @@ import org.jspecify.annotations.Nullable;
  * Per-frame camera bookkeeping for the passes that look back at earlier frames, and the world pass.
  *
  * Temporal anti-aliasing moves the level's projection by a different fraction of a pixel every frame
- * (an 8-step Halton sequence), so over a few frames every pixel sees its whole area. The world post
- * chain (light shafts, ambient occlusion, the air and the mist, and anti-aliasing) then runs right after
+ * (a Halton sequence of 8 steps, more with the world drawn smaller), so over a few frames every pixel sees
+ * its whole area. The world post chain (light shafts, ambient occlusion, the air and the mist, and anti-aliasing) then runs right after
  * the level, before the hand is drawn: the hand is neither jittered nor blended with old frames, so it
  * never smears.
  *
@@ -33,13 +36,21 @@ import org.jspecify.annotations.Nullable;
 public final class EtnaFrame {
 	public static final Identifier WORLD = Identifier.fromNamespaceAndPath(EtnaClient.MOD_ID, "etna_world");
 	public static final Identifier WORLD_PLAIN = Identifier.fromNamespaceAndPath(EtnaClient.MOD_ID, "etna_world_plain");
+	/**
+	 * The world chain for a world drawn smaller than the screen (EtnaScale): the same passes on the smaller picture,
+	 * with the anti-aliasing's history at full size and its last pass writing Minecraft's own picture, "etna:screen".
+	 */
+	public static final Identifier WORLD_SCALED = Identifier.fromNamespaceAndPath(EtnaClient.MOD_ID, "etna_world_scaled");
+	private static final Set<Identifier> SCALED_TARGETS = Set.of(PostChain.MAIN_TARGET_ID, EtnaScale.SCREEN);
 
 	/**
-	 * The jitter is Halton(2, 3) over these steps, step = frame % JITTER_STEPS + 1. terrain_water.glsl
-	 * (ETNA_JITTER) rebuilds the same sequence from EtnaLook2.z (frame % 4096) to hold the water's glints
-	 * still: change the two together.
+	 * The jitter is Halton(2, 3) over these steps at full size, step = frame % steps + 1 (jitterSteps). The
+	 * terrain reads this frame's jitter from its block (EtnaSurface2.zw, EtnaMaterials) to hold the water's glints
+	 * still.
 	 */
 	private static final int JITTER_STEPS = 8;
+	/** The most steps with the world drawn smaller (from half its width down; see jitterSteps). */
+	private static final int JITTER_STEPS_MAX = 32;
 	/** A camera jump longer than this (teleport, respawn) starts the history over. */
 	private static final double MAX_CAMERA_STEP = 16.0;
 
@@ -62,11 +73,16 @@ public final class EtnaFrame {
 	private static float motionZ;
 	private static int width;
 	private static int height;
+	/** The screen's size that frame (EtnaScale): the history is at that size. */
+	private static int screenWidth;
+	private static int screenHeight;
 	/** The level of the last frame drawn, held weakly: after leaving a world the menus must not keep it alive. */
 	private static WeakReference<@Nullable ClientLevel> level = new WeakReference<>(null);
 	private static boolean worldFailed;
 	private static boolean plainFailed;
 	private static boolean historyHeld;
+	/** Which world chain holds the anti-aliasing history: the scaled one or the full-size one. */
+	private static boolean historyScaled;
 	/**
 	 * The anti-aliasing history is two textures used in turn (PostChainMixin): when this is set, last
 	 * frame's result is in the one named "history1", so the names are swapped for this frame.
@@ -95,7 +111,8 @@ public final class EtnaFrame {
 		double dz = pos.z - cameraZ;
 		ClientLevel current = mc.level;
 		boolean sameLevel = current == level.get();
-		boolean sameView = lastWorldFrame == frame - 1 && targetWidth == width && targetHeight == height && sameLevel
+		boolean sameView = lastWorldFrame == frame - 1 && targetWidth == width && targetHeight == height
+			&& EtnaScale.screenWidth() == screenWidth && EtnaScale.screenHeight() == screenHeight && sameLevel
 			&& dx * dx + dy * dy + dz * dz < MAX_CAMERA_STEP * MAX_CAMERA_STEP;
 		historyValid = temporal && sameView;
 		motionX = (float) dx;
@@ -106,6 +123,8 @@ public final class EtnaFrame {
 		cameraZ = pos.z;
 		width = targetWidth;
 		height = targetHeight;
+		screenWidth = EtnaScale.screenWidth();
+		screenHeight = EtnaScale.screenHeight();
 		if (!sameLevel) {
 			level = new WeakReference<>(current);
 		}
@@ -120,7 +139,7 @@ public final class EtnaFrame {
 			jitterY = 0.0F;
 			return projection;
 		}
-		int step = (int) (frame % JITTER_STEPS) + 1;
+		int step = (int) (frame % jitterSteps(targetWidth)) + 1;
 		jitterX = halton(step, 2) - 0.5F;
 		jitterY = halton(step, 3) - 0.5F;
 		// Shift in clip space: x' = x + offset * w moves the whole picture by the offset in NDC.
@@ -139,16 +158,20 @@ public final class EtnaFrame {
 		if (!temporal) {
 			// Anti-aliasing (or Etna) was turned off: give back the screen-size history it kept.
 			if (historyHeld) {
-				historyHeld = false;
-				historySwapped = false;
-				PostChain chain = mc.getShaderManager().getPostChain(WORLD, LevelTargetBundle.MAIN_TARGETS);
-				if (chain != null) {
-					chain.closePersistentTargets();
-				}
+				releaseHistory(mc);
 			}
 			if (EtnaClient.activeEffect() != null && EtnaConfig.worldPassActive() && !plainFailed) {
 				processPlain(mc, mainTarget, allocator);
 			}
+			return;
+		}
+		RenderTarget scaled = EtnaScale.scaledTarget();
+		if (historyHeld && historyScaled != (scaled != null)) {
+			// The world changed size: the other chain's history no longer fits, and beginLevel already started over.
+			releaseHistory(mc);
+		}
+		if (scaled != null) {
+			processScaled(mc, mainTarget, scaled, allocator);
 			return;
 		}
 		PostChain chain = mc.getShaderManager().getPostChain(WORLD, LevelTargetBundle.MAIN_TARGETS);
@@ -160,12 +183,85 @@ public final class EtnaFrame {
 		outlineFrame = frame;
 		try {
 			chain.process(mainTarget, allocator);
-			lastWorldFrame = frame;
-			historyHeld = true;
-			// This frame's result went into the texture the next frame must read as its history.
-			historySwapped = !historySwapped;
+			worldDone(false);
 		} catch (RuntimeException e) {
 			fail("the world pass failed", e);
+		}
+	}
+
+	/**
+	 * The world chain on a world drawn smaller than the screen (EtnaScale): its passes run on the smaller picture,
+	 * and the anti-aliasing builds the full-size one into Minecraft's own (its last pass writes "etna:screen").
+	 * The entity outlines were drawn at the smaller size too, so they are blended in first, as on the full-size path.
+	 */
+	private static void processScaled(Minecraft mc, RenderTarget screen, RenderTarget scaled, GraphicsResourceAllocator allocator) {
+		PostChain chain = mc.getShaderManager().getPostChain(WORLD_SCALED, SCALED_TARGETS);
+		if (chain == null) {
+			// Without it nothing builds the full-size picture; the next frame draws the world at full size.
+			EtnaScale.fail("the scaled world pass did not load", null);
+			EtnaScale.clearScreen(screen);
+			return;
+		}
+		mc.levelRenderer.blitEntityOutline();
+		outlineFrame = frame;
+		try {
+			FrameGraphBuilder graph = new FrameGraphBuilder();
+			ScaledTargets targets = new ScaledTargets(graph.importExternal("main", scaled), graph.importExternal("screen", screen));
+			chain.addToFrame(graph, scaled.width, scaled.height, targets);
+			graph.execute(allocator);
+			worldDone(true);
+		} catch (RuntimeException e) {
+			EtnaScale.fail("the scaled world pass failed", e);
+			EtnaScale.clearScreen(screen);
+		}
+	}
+
+	private static void worldDone(boolean scaled) {
+		lastWorldFrame = frame;
+		historyHeld = true;
+		historyScaled = scaled;
+		// This frame's result went into the texture the next frame must read as its history.
+		historySwapped = !historySwapped;
+	}
+
+	/** Gives back the screen-size history the anti-aliasing kept, in whichever world chain holds it. */
+	private static void releaseHistory(Minecraft mc) {
+		historyHeld = false;
+		historySwapped = false;
+		PostChain chain = historyScaled ? mc.getShaderManager().getPostChain(WORLD_SCALED, SCALED_TARGETS)
+			: mc.getShaderManager().getPostChain(WORLD, LevelTargetBundle.MAIN_TARGETS);
+		if (chain != null) {
+			chain.closePersistentTargets();
+		}
+	}
+
+	/** Minecraft's picture under its two names in the scaled world chain: the smaller one as main, the screen's own. */
+	private static final class ScaledTargets implements PostChain.TargetBundle {
+		private ResourceHandle<RenderTarget> main;
+		private ResourceHandle<RenderTarget> screen;
+
+		ScaledTargets(ResourceHandle<RenderTarget> main, ResourceHandle<RenderTarget> screen) {
+			this.main = main;
+			this.screen = screen;
+		}
+
+		@Override
+		public void replace(Identifier id, ResourceHandle<RenderTarget> handle) {
+			if (id.equals(PostChain.MAIN_TARGET_ID)) {
+				this.main = handle;
+			} else if (id.equals(EtnaScale.SCREEN)) {
+				this.screen = handle;
+			} else {
+				throw new IllegalArgumentException("No target with id " + id);
+			}
+		}
+
+		@Override
+		public @Nullable ResourceHandle<RenderTarget> get(Identifier id) {
+			if (id.equals(PostChain.MAIN_TARGET_ID)) {
+				return this.main;
+			}
+			return id.equals(EtnaScale.SCREEN) ? this.screen : null;
 		}
 	}
 
@@ -208,6 +304,7 @@ public final class EtnaFrame {
 		worldFailed = false;
 		plainFailed = false;
 		historyHeld = false;
+		EtnaScale.resourcesReloaded();
 		EtnaSky.resourcesReloaded();
 		EtnaClouds.resourcesReloaded();
 		EtnaWeather.resourcesReloaded();
@@ -226,6 +323,11 @@ public final class EtnaFrame {
 
 	public static boolean temporal() {
 		return temporal;
+	}
+
+	/** False once the anti-aliased world chain has failed this session: nothing could build a smaller world back up. */
+	public static boolean worldPassWorks() {
+		return !worldFailed;
 	}
 
 	public static long frame() {
@@ -276,7 +378,23 @@ public final class EtnaFrame {
 		return jitterY;
 	}
 
-	/** Also tabulated in terrain_water.glsl (ETNA_JITTER); see JITTER_STEPS. */
+	/**
+	 * Jitter steps for a level drawn targetWidth pixels wide. With the world drawn smaller than the screen
+	 * (EtnaScale) each step's samples are spread over fewer level pixels than there are screen pixels, so it takes
+	 * more steps for every screen pixel to be seen about as often as at full size: 8 / scale^2 (the camera jitter
+	 * guidance of AMD's FidelityFX Super Resolution 2), rounded up to a power of two so frame % 4096 stays a
+	 * whole number of cycles. 16 at 75%, 32 at half size.
+	 */
+	private static int jitterSteps(int targetWidth) {
+		float scale = (float) targetWidth / Math.max(EtnaScale.screenWidth(), 1);
+		if (scale >= 0.999F) {
+			return JITTER_STEPS;
+		}
+		int wanted = (int) Math.ceil(JITTER_STEPS / (scale * scale));
+		return Math.min(Integer.highestOneBit(wanted - 1) << 1, JITTER_STEPS_MAX);
+	}
+
+	/** Halton's radical inverse of index in base. */
 	private static float halton(int index, int base) {
 		float f = 1.0F;
 		float result = 0.0F;

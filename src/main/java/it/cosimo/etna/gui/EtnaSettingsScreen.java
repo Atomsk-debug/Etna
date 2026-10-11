@@ -166,6 +166,10 @@ public final class EtnaSettingsScreen extends Screen {
 		// Not part of the look: moving it keeps the look as it is.
 		this.add(new Slider("visibility", EtnaConfig.visibility.min, EtnaConfig.visibility.max, EtnaConfig.visibility.value,
 			EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.visibility.set((float) v)), "visibility");
+		// Not part of the look either: how many pixels the world is drawn at (EtnaScale), in steps of 5%.
+		this.add(new Slider("renderScale", EtnaConfig.RENDER_SCALE_MIN, 1.0, EtnaConfig.renderScale,
+			v -> Component.literal(Math.round(v * 20.0) * 5 + "%"), v -> EtnaConfig.renderScale = Math.round((float) v * 20.0F) / 20.0F),
+			"renderScale");
 		if (MacosUtil.IS_MACOS) {
 			this.cycle("resolution",
 				() -> Component.translatable(EtnaConfig.halfResolution ? "etna.options.resolution.half" : "etna.options.resolution.full"),

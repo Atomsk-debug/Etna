@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * A step whose camera moves or turns, or that hits a frame over 50 ms (a pipeline compile, chunks
  * loading, a garbage collection), starts measuring again half a second later, up to three tries; only a
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
- * disturbed. Twenty steps take about 130 seconds. The run moves on from the start of each frame; a
+ * disturbed. Twenty-one steps take about 135 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
  *
  * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it
@@ -121,6 +121,9 @@ public final class EtnaBenchmark {
 			base -> base.shadows),
 		new Step(AA_OFF, Role.OTHER, () -> EtnaConfig.antiAliasing = false,
 			base -> base.antiAliasing),
+		// The world drawn at 75% of the width and height, built back up by the anti-aliasing (EtnaScale).
+		new Step("world resolution 75%", Role.OTHER, () -> EtnaConfig.renderScale = 0.75F,
+			base -> base.antiAliasing && base.renderScale != 0.75F),
 		new Step("surface detail+shine off", Role.OTHER, () -> {
 			EtnaConfig.surfaceDetail.set(0.0F);
 			EtnaConfig.shine.set(0.0F);
@@ -913,6 +916,7 @@ public final class EtnaBenchmark {
 		final float shadowDistance = EtnaConfig.shadowDistance;
 		final boolean antiAliasing = EtnaConfig.antiAliasing;
 		final boolean shadowCulling = EtnaConfig.shadowCulling;
+		final float renderScale = EtnaConfig.renderScale;
 		final float[] look = new float[EtnaConfig.LOOK.size()];
 		// The 0.8.0 settings outside the Look.
 		final EtnaConfig.Mood mood = EtnaConfig.mood;
@@ -953,6 +957,7 @@ public final class EtnaBenchmark {
 			EtnaConfig.shadowDistance = this.shadowDistance;
 			EtnaConfig.antiAliasing = this.antiAliasing;
 			EtnaConfig.shadowCulling = this.shadowCulling;
+			EtnaConfig.renderScale = this.renderScale;
 			for (int i = 0; i < this.look.length; i++) {
 				// Exactly the old value: Setting.set would clamp, and these came from the same ranges anyway.
 				EtnaConfig.LOOK.get(i).value = this.look[i];

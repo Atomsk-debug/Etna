@@ -414,13 +414,6 @@ float waterGlitter(vec2 p, float t, float footprint, vec2 seen, vec2 target, flo
     #endif
 }
 
-// Temporal anti-aliasing moves the level's picture by a fraction of a pixel every frame: EtnaFrame's
-// 8-step Halton sequence (bases 2 and 3, less 0.5), in pixels, one step per frame. Keep the two in step.
-const vec2 ETNA_JITTER[8] = vec2[8](
-    vec2(0.0, -0.16666667), vec2(-0.25, 0.16666667), vec2(0.25, -0.38888889), vec2(-0.375, -0.05555556),
-    vec2(0.125, 0.27777778), vec2(-0.125, -0.27777778), vec2(0.375, 0.05555556), vec2(-0.4375, 0.38888889)
-);
-
 // From this fragment to the point its pixel's centre would show without this frame's jitter, camera-
 // relative. Detail drawn there holds still from frame to frame; drawn where the jitter puts it, small
 // detail that moves (glints on moving waves) shimmers, because the anti-aliasing drops the old frames
@@ -430,8 +423,9 @@ const vec2 ETNA_JITTER[8] = vec2[8](
 vec3 etnaUnjitter() {
     #ifdef ETNA_SHADOWS
     if (EtnaWorld.y > 0.5) {
-        // EtnaLook2.z is the frame number modulo 4096, a multiple of the sequence's 8 steps.
-        vec2 jitter = ETNA_JITTER[int(EtnaLook2.z + 0.5) & 7];
+        // Temporal anti-aliasing moves the level's picture by a fraction of a pixel every frame (EtnaFrame's
+        // Halton sequence, in the level's pixels).
+        vec2 jitter = ETNA_JITTER_NOW;
         // The jitter moves the picture by +jitter pixels in window space (x right, y down, as dFdx and
         // dFdy count), so the centre's own point lies +jitter pixels on along the surface.
         vec3 shift = dFdx(etnaViewPos) * jitter.x + dFdy(etnaViewPos) * jitter.y;

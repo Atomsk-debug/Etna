@@ -108,6 +108,10 @@ CORE_VARIANTS = {"terrain": TERRAIN_VARIANTS, "clouds": CLOUDS_VARIANTS, "weathe
 
 
 def vanilla_dir():
+    if len(sys.argv) > 1 and sys.argv[1].startswith("-"):
+        # Not a folder: "--help" once became one, with Mojang's shaders downloaded into it.
+        print(__doc__)
+        sys.exit(0 if sys.argv[1] in ("-h", "--help") else 2)
     d = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build/vanilla-assets"
     inc = d / "minecraft/shaders/include"
     inc.mkdir(parents=True, exist_ok=True)

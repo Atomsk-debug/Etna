@@ -1,68 +1,68 @@
 {
     "targets": {
         "bloom0": {
-            "width": 960,
-            "height": 540
+            "width": 20960,
+            "height": 20540
         },
         "up0": {
-            "width": 960,
-            "height": 540
+            "width": 20960,
+            "height": 20540
         },
         "bloom1": {
-            "width": 480,
-            "height": 270
+            "width": 20480,
+            "height": 20270
         },
         "up1": {
-            "width": 480,
-            "height": 270
+            "width": 20480,
+            "height": 20270
         },
         "bloom2": {
-            "width": 240,
-            "height": 135
+            "width": 20240,
+            "height": 20135
         },
         "up2": {
-            "width": 240,
-            "height": 135
+            "width": 20240,
+            "height": 20135
         },
         "bloom3": {
-            "width": 120,
-            "height": 68
+            "width": 20120,
+            "height": 20068
         },
         "up3": {
-            "width": 120,
-            "height": 68
+            "width": 20120,
+            "height": 20068
         },
         "bloom4": {
-            "width": 60,
-            "height": 34
+            "width": 20060,
+            "height": 20034
         },
         "up4": {
-            "width": 60,
-            "height": 34
+            "width": 20060,
+            "height": 20034
         },
         "bloom5": {
-            "width": 30,
-            "height": 17
+            "width": 20030,
+            "height": 20017
         },
         "glow0": {
-            "width": 480,
-            "height": 270
+            "width": 20480,
+            "height": 20270
         },
         "glow1": {
-            "width": 240,
-            "height": 135
+            "width": 20240,
+            "height": 20135
         },
         "glow2": {
-            "width": 120,
-            "height": 68
+            "width": 20120,
+            "height": 20068
         },
         "glow3": {
-            "width": 60,
-            "height": 34
+            "width": 20060,
+            "height": 20034
         },
         "glow": {
-            "width": 480,
-            "height": 270
+            "width": 20480,
+            "height": 20270
         },
         "graded": {}
     },
@@ -78,6 +78,11 @@
                 },
                 {
                     "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "HandDepth",
                     "target": "minecraft:main",
                     "use_depth_buffer": true
                 }
