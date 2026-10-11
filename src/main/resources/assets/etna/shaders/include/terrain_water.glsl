@@ -588,8 +588,11 @@ float waterDepthBelow(out float trust) {
 // the surface took the sharp shadow of its own point, a second copy of every shadow next to the one on
 // the bottom (shifted from it by the depth, the more the lower the sun), and the two crossed each other out
 // in strange shapes. Four points down the view's way into the water, each at an equal share of the light
-// scattered back above the bottom, each the bilinear blend of four texels (shadowSoftAt). Seen from
-// below, or past the map, the surface's own shadow as before.
+// scattered back above the bottom, each the bilinear blend of four texels (shadowSoftAt). A point counts
+// as shaded only by what stands above the water's surface on its way to the sun: it is looked up where
+// that way crosses the surface (the same texels of the map, a shallower depth), so a point that ends up
+// inside a bottom rising ahead of the view (a beach stepping up out of a lake) doesn't take the bottom over
+// it for a shadow. Seen from below, or past the map, the surface's own shadow as before.
 float waterBodyShadow(vec3 normal) {
     if (normal.y < 0.8 || cameraInAir() < 0.5) {
         return shadowVisibility(normal, false);
@@ -606,9 +609,11 @@ float waterBodyShadow(vec3 normal) {
     float perDepth = waterExtinction(EtnaWaterLook.x).g * (1.0 / max(ETNA_LIGHT_DIR.y, 0.1) + 1.0 / cosDown);
     float total = 1.0 - exp(-perDepth * below);
     float lit = 0.0;
+    // Along the light to the surface's plane from z blocks under it: same map texels, the depth there.
+    vec3 up = ETNA_LIGHT_DIR / max(ETNA_LIGHT_DIR.y, 0.05);
     for (int i = 0; i < 4; i++) {
         float z = -log(1.0 - (float(i) + 0.5) * 0.25 * total) / perDepth;
-        lit += shadowSoftAt(etnaViewPos + down * (z / cosDown));
+        lit += shadowSoftAt(etnaViewPos + down * (z / cosDown) + up * z);
     }
     lit *= 0.25;
     return trust < 1.0 ? mix(shadowVisibility(normal, false), lit, trust) : lit;
