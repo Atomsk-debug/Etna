@@ -48,7 +48,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * The anti-aliasing history is two persistent targets used in turn: the world chain reads last frame's
  * result from "history0" and writes this frame's into "history1", and the two textures behind those
- * names swap after every frame (EtnaFrame.historySwapped), so the result is never copied.
+ * names swap after every frame (EtnaFrame.historySwapped), so the result is never copied. The water
+ * reflections keep their own history in "water_ssr0" and "water_ssr1" the same way.
  * Vanilla's chains are untouched.
  */
 @Mixin(PostChain.class)
@@ -70,6 +71,13 @@ public abstract class PostChainMixin {
 
 	@Unique
 	private static final Identifier ETNA_HISTORY_WRITE = Identifier.withDefaultNamespace("history1");
+
+	/** The water reflections' own history, kept the same way; gen_post_effects.py knows these names. */
+	@Unique
+	private static final Identifier ETNA_SSR_READ = Identifier.withDefaultNamespace("water_ssr0");
+
+	@Unique
+	private static final Identifier ETNA_SSR_WRITE = Identifier.withDefaultNamespace("water_ssr1");
 
 	@Unique
 	private static boolean etna$hdrPass;
@@ -208,8 +216,9 @@ public abstract class PostChainMixin {
 
 	/**
 	 * Every other frame the world chain's two history names are given each other's textures: the pass
-	 * that reads "history0" then reads what the last frame wrote into "history1". Only the lookup changes;
-	 * each texture is still made, resized and freed with the chain's other persistent targets.
+	 * that reads "history0" then reads what the last frame wrote into "history1", and the same for the water
+	 * reflections' "water_ssr0" and "water_ssr1". Only the lookup changes; each texture is still made,
+	 * resized and freed with the chain's other persistent targets.
 	 */
 	@ModifyArg(
 		method = "addToFrame",
@@ -226,6 +235,12 @@ public abstract class PostChainMixin {
 		if (target.equals(ETNA_HISTORY_READ)) {
 			return ETNA_HISTORY_WRITE;
 		}
-		return target.equals(ETNA_HISTORY_WRITE) ? ETNA_HISTORY_READ : target;
+		if (target.equals(ETNA_HISTORY_WRITE)) {
+			return ETNA_HISTORY_READ;
+		}
+		if (target.equals(ETNA_SSR_READ)) {
+			return ETNA_SSR_WRITE;
+		}
+		return target.equals(ETNA_SSR_WRITE) ? ETNA_SSR_READ : target;
 	}
 }

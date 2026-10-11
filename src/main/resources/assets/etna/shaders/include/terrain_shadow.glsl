@@ -365,6 +365,34 @@ float shadowAt(vec3 position) {
     return mix(lit, 1.0, etnaCasterFade(position));
 }
 
+// The test for a point from shadowSpace (or the same for the second map) with the four texels round it
+// blended bilinearly, so it slides smoothly as the point moves instead of stepping a texel at a time, and
+// fading out towards the map's edge as shadowVisibility does: for averages of a few points (the light in
+// the water under its surface, waterBodyShadow), where single texels would show as steps.
+float etnaShadowSoft(sampler2D map, vec4 point) {
+    if (point.w >= 1.0 || point.z <= 0.0) {
+        return 1.0;
+    }
+    vec2 q = point.xy / max(EtnaShadowInfo.x, 1e-6);
+    vec2 corner = floor(q - 0.5) + 1.0;
+    vec2 f = q - (corner - 0.5);
+    // Reversed depth: open where the map holds nothing closer to the light than the point, by the bias.
+    vec4 open = step(etnaShadowQuad(map, corner), vec4(point.z + EtnaShadowInfo.z * 0.05));
+    float lit = dot(open, vec4((1.0 - f.x) * f.y, f.x * f.y, f.x * (1.0 - f.y), (1.0 - f.x) * (1.0 - f.y)));
+    return mix(lit, 1.0, smoothstep(0.85, 1.0, point.w));
+}
+
+// etnaShadowSoft for a camera-relative point, from the two maps while they fade, and as light as
+// shadowVisibility makes shadows under a low sun and towards the end of the casters.
+float shadowSoftAt(vec3 position) {
+    float lit = etnaShadowSoft(EtnaShadowSampler, shadowSpace(position));
+    if (EtnaShadowFade.x > 0.0) {
+        vec4 clip = EtnaShadowMat2 * vec4(position, 1.0);
+        lit = mix(lit, etnaShadowSoft(EtnaShadowSampler2, etnaShadowMapPoint(clip.xyz / clip.w)), EtnaShadowFade.x);
+    }
+    return mix(lit, 1.0, max(etnaLowSunFill(), etnaCasterFade(position)));
+}
+
 // shadowAt for one of many jittered samples that are averaged (the light shafts under water): it reads
 // one map only, the second when `pick` (0 .. 1, a different value for each sample) is below the fade's
 // weight, so the average mixes the two maps as shadowAt does, for one read a sample.

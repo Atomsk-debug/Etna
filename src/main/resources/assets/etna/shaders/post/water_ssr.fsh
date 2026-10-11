@@ -6,7 +6,17 @@
 // 0.8.0 traced a different pixel of the block each frame along steps shifted by noise, for the
 // anti-aliasing to average, but where only some rays met a thin edge (leaves, a fence, a block's corner)
 // the anti-aliasing kept them as specks, and the reflections read as dots. The same rays every frame give
-// a steady image that only moves with the camera and the waves.
+// a steady image that only moves with the camera and the waves. The rays are traced where the pixel's
+// centre would be without the anti-aliasing's jitter, and every read of the depth and the picture is moved
+// by the jitter to where the picture holds that point, so a still scene gives the same rays every frame.
+//
+// Even so, where a ray only just meets or misses an edge it can go either way from one frame to the next
+// (the jittered picture's edges move by up to half a pixel, the waves move on), and a whole 2x2 block, then
+// spread over its neighbours by the world pass, changes at once: too smooth for the anti-aliasing, which
+// keeps the old frames only where they fit the new one's neighbouring pixels, to tell from a real change,
+// so the reflection flickered. With anti-aliasing on, each texel is now blended with the last frames' own
+// result for the same point of the water (SSR_BLEND, moved to where the point was on last frame's screen):
+// a ray that goes either way gives the average.
 //
 // Without improved transparency the water is drawn into Minecraft's picture after everything opaque, and
 // it writes the depth buffer: after the level the depth there is the water's surface, exactly where a
@@ -50,6 +60,9 @@
 
 uniform sampler2D InSampler;
 uniform sampler2D DepthSampler;
+// This pass's result from the frames before (the world chain's "water_ssr0"; the plain chain, without
+// anti-aliasing, never reads it).
+uniform sampler2D SsrHistorySampler;
 
 layout(std140) uniform SamplerInfo {
     vec2 OutSize;
@@ -88,6 +101,10 @@ const float THICKNESS = 1.5;
 const float THICKNESS_SHARE = 0.05;
 // Share of the screen, at each edge, over which the world's reflection fades into the sky's.
 const float EDGE_FADE = 0.07;
+// How much of this frame's result each texel takes, against the last frames' for the same point of the
+// water: about the last four frames count. While the camera moves, what the water mirrors shifts against
+// the water itself (things nearer and further away by different amounts), and this frame counts more.
+const float SSR_BLEND = 0.3;
 // Only faces turned within about 25 degrees of straight up reflect: the water's top (flowing water tilts
 // a little), not glass panes or the sides of a waterfall.
 const float LEVEL = 0.9;
@@ -140,9 +157,54 @@ void nothing() {
     fragColor = vec4(0.0);
 }
 
-// Water whose reflection stays the sky the water shader drew, dist blocks away.
-void unchanged(float dist) {
-    fragColor = vec4(0.0, 0.0, 0.0, dist);
+// The last frames' change for the water point at camera-relative `position`: rgb, and in a how much of it can
+// be gone by (0 none: no history, the point off last frame's screen, or no water at its distance there).
+vec4 lastChange(vec3 position) {
+    if (Frame.w < 0.5 || Motion.w < 0.5) {
+        return vec4(0.0);
+    }
+    // Last frame's camera was Motion.xyz behind this one's.
+    vec3 before = position + Motion.xyz;
+    vec4 h = PrevViewProj * vec4(before, 1.0);
+    if (h.w <= 0.0) {
+        return vec4(0.0);
+    }
+    vec2 uv = h.xy / h.w;
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
+        return vec4(0.0);
+    }
+    // Texel c held pixel 2c: blend the four round the point, each only if it held water at the point's
+    // distance from last frame's camera.
+    vec2 c = (uv * DepthSize - 0.5) * 0.5;
+    ivec2 base = ivec2(floor(c));
+    vec2 f = c - vec2(base);
+    ivec2 last = textureSize(SsrHistorySampler, 0) - 1;
+    float dist = length(before);
+    vec3 sum = vec3(0.0);
+    float weights = 0.0;
+    for (int i = 0; i < 4; i++) {
+        ivec2 o = ivec2(i & 1, i >> 1);
+        vec4 texel = texelFetch(SsrHistorySampler, clamp(base + o, ivec2(0), last), 0);
+        float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
+        if (texel.a > 0.0 && abs(texel.a - dist) < 0.3 + 0.03 * dist) {
+            sum += w * texel.rgb;
+            weights += w;
+        }
+    }
+    return weights > 0.01 ? vec4(sum / weights, weights) : vec4(0.0);
+}
+
+// This frame's change for the water point at `position`, dist blocks away, blended with the last frames'.
+void result(vec3 change, vec3 position, float dist) {
+    vec4 before = lastChange(position);
+    float moving = smoothstep(0.03, 0.3, length(Motion.xyz));
+    float blend = mix(1.0, mix(SSR_BLEND, 1.0, moving), smoothstep(0.25, 1.0, before.a));
+    fragColor = vec4(mix(before.rgb, change, blend), dist);
+}
+
+// Water whose reflection stays the sky the water shader drew this frame, dist blocks away.
+void unchanged(vec3 position, float dist) {
+    result(vec3(0.0), position, dist);
 }
 
 void main() {
@@ -158,7 +220,10 @@ void main() {
         nothing();
         return;
     }
-    vec2 uv = (vec2(pixel) + 0.5) / DepthSize;
+    // The picture is moved by +jitter pixels: the pixel shows the point that would sit at its centre less
+    // the jitter, and a point at uv lies at uv + jitter in the picture (0 without anti-aliasing).
+    vec2 jitter = Frame.yz / DepthSize;
+    vec2 uv = (vec2(pixel) + 0.5) / DepthSize - jitter;
     vec3 position = etnaPosition(uv, depth);
     // Water seen from above only.
     if (position.y > -RAY_LIFT) {
@@ -212,7 +277,7 @@ void main() {
     float keep = (1.0 - hazed) * (1.0 - fogged);
     if (ray.y < 0.02 || mirror * keep < 0.004) {
         // A ray that skims the water, or a reflection too faint to change the picture.
-        unchanged(dist);
+        unchanged(position, dist);
         return;
     }
 
@@ -240,7 +305,7 @@ void main() {
         exit = min(exit, -s0.z / span3.z);
     }
     if (exit <= 0.0) {
-        unchanged(dist);
+        unchanged(position, dist);
         return;
     }
 
@@ -253,7 +318,7 @@ void main() {
         float t = exit * pow(float(i) / float(STEPS), STEP_CURVE);
         vec3 s = s0 + span3 * t;
         // Reversed depth: the ray lies behind what the depth buffer holds where its depth is smaller.
-        bool behind = s.z < depthAt(s.xy);
+        bool behind = s.z < depthAt(s.xy + jitter);
         if (behind && ahead) {
             // Halve the step down to the point where the ray passes behind that surface.
             float lo = before;
@@ -261,14 +326,14 @@ void main() {
             for (int k = 0; k < HALVINGS; k++) {
                 float mid = 0.5 * (lo + hi);
                 vec3 m = s0 + span3 * mid;
-                if (m.z < depthAt(m.xy)) {
+                if (m.z < depthAt(m.xy + jitter)) {
                     hi = mid;
                 } else {
                     lo = mid;
                 }
             }
             vec3 h = s0 + span3 * hi;
-            vec3 there3 = vec3(h.xy, depthAt(h.xy));
+            vec3 there3 = vec3(h.xy, depthAt(h.xy + jitter));
             float surface = viewDepth(there3);
             if (surface > viewDepth(s0 + span3 * lo) - max(THICKNESS, THICKNESS_SHARE * surface)
                     && etnaPosition(there3.xy, there3.z).y > position.y + RAY_ABOVE) {
@@ -280,13 +345,13 @@ void main() {
         before = t;
     }
     if (found < 0.0) {
-        unchanged(dist);
+        unchanged(position, dist);
         return;
     }
     vec3 hit = s0 + span3 * found;
     vec2 edge = min(hit.xy, 1.0 - hit.xy);
     float trust = smoothstep(0.0, EDGE_FADE, min(edge.x, edge.y));
-    vec3 world = texelFetch(InSampler, clamp(ivec2(hit.xy * InSize), ivec2(0), ivec2(InSize) - 1), 0).rgb;
+    vec3 world = texelFetch(InSampler, clamp(ivec2((hit.xy + jitter) * InSize), ivec2(0), ivec2(InSize) - 1), 0).rgb;
 
     // The sky's reflection the water drew, as far as this pixel's colour could hold it.
     // The terrain dims it with the open sky's light (etnaDaylight: low at night and in storms), which
@@ -295,5 +360,5 @@ void main() {
     vec3 held = picture.rgb / max(sky, vec3(1e-4));
     float open = clamp(min(openSky, min(held.r, min(held.g, held.b))), 0.0, 1.0);
     vec3 change = (world * (mirror * keep) - sky * open) * trust;
-    fragColor = vec4(change, dist);
+    result(change, position, dist);
 }

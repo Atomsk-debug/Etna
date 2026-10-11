@@ -54,6 +54,12 @@ GLOW_SIZES = [(480, 270), (240, 135), (120, 68), (60, 34)]
 HISTORY_READ = "history0"
 HISTORY_WRITE = "history1"
 
+# The water reflections' own history, kept the same way (with anti-aliasing only): the reflections pass reads
+# the last frames' result from the first and writes this frame's into the second, which the world pass reads.
+# PostChainMixin knows these names too.
+SSR_READ = "water_ssr0"
+SSR_WRITE = "water_ssr1"
+
 # Render scale (EtnaScale.java has both): Minecraft's full-size picture in the scaled world chain, and the size
 # that makes an Etna target as large as the screen.
 SCREEN = "etna:screen"
@@ -66,6 +72,7 @@ REFERENCE_SIZED = 20000
 
 def sized(w, h):
     return {"width": REFERENCE_SIZED + w, "height": REFERENCE_SIZED + h}
+
 
 # The light shafts' lit share and ray length, at half the screen's size (sized for 1920x1080 and scaled, as
 # the bloom levels are).
@@ -96,9 +103,12 @@ def shafts_target():
     return sized(*SHAFTS_SIZE)
 
 
-def water_ssr_target():
+def water_ssr_target(persistent=False):
     # The same half size as the shafts: the world pass maps its pixels onto both the same way.
-    return shafts_target()
+    t = shafts_target()
+    if persistent:
+        t["persistent"] = True
+    return t
 
 
 def shafts_pass():
@@ -108,15 +118,18 @@ def shafts_pass():
                shadow=True)
 
 
-def water_ssr_pass():
-    # Reads the picture (its alpha marks the water) and the depth the water left; the EtnaShadow block holds
-    # this frame's sky, which the water mirrored.
-    return pas("etna:post/water_ssr", [inp("In", MAIN), inp("Depth", MAIN, depth=True)], "water_ssr", shadow=True)
+def water_ssr_pass(history, output):
+    # Reads the picture (its alpha marks the water), the depth the water left and its own result from the
+    # frames before; the EtnaShadow block holds this frame's sky, which the water mirrored. Without
+    # anti-aliasing there is no history, and the input names the shafts only so the chain loads: the pass
+    # never reads it then.
+    return pas("etna:post/water_ssr", [inp("In", MAIN), inp("Depth", MAIN, depth=True), inp("SsrHistory", history)],
+               output, shadow=True)
 
 
-def world_light_pass(output):
+def world_light_pass(output, water_ssr):
     return pas("etna:post/world_light", [inp("In", MAIN), inp("Depth", MAIN, depth=True), inp("Shafts", "shafts"),
-                                         inp("WaterSsr", "water_ssr")], output, settings=True)
+                                         inp("WaterSsr", water_ssr)], output, settings=True)
 
 
 def copy_pass(source, output=MAIN):
@@ -133,13 +146,13 @@ def world(scaled=False):
     if scaled:
         history.update({"width": SCREEN_SIZED, "height": SCREEN_SIZED})
     return {
-        "targets": {"shafts": shafts_target(), "water_ssr": water_ssr_target(), "air": {},
-                    HISTORY_READ: dict(history), HISTORY_WRITE: dict(history)},
+        "targets": {"shafts": shafts_target(), SSR_READ: water_ssr_target(True), SSR_WRITE: water_ssr_target(True),
+                    "air": {}, HISTORY_READ: dict(history), HISTORY_WRITE: dict(history)},
         "passes": [
             shafts_pass(),
-            water_ssr_pass(),
+            water_ssr_pass(SSR_READ, SSR_WRITE),
             # Before anti-aliasing, so the sky and the air in front of the land are smoothed with the rest.
-            world_light_pass("air"),
+            world_light_pass("air", SSR_WRITE),
             pas("etna:post/taa",
                 [inp("In", "air"), inp("History", HISTORY_READ, bilinear=True), inp("Depth", MAIN, depth=True)],
                 HISTORY_WRITE, settings=True),
@@ -157,8 +170,8 @@ def world_plain():
         "targets": {"shafts": shafts_target(), "water_ssr": water_ssr_target(), "lit": {}},
         "passes": [
             shafts_pass(),
-            water_ssr_pass(),
-            world_light_pass("lit"),
+            water_ssr_pass("shafts", "water_ssr"),
+            world_light_pass("lit", "water_ssr"),
             copy_pass("lit"),
         ],
     }
