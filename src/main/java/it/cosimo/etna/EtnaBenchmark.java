@@ -12,6 +12,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.state.level.SkyRenderState;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 
@@ -31,6 +32,15 @@ import org.jspecify.annotations.Nullable;
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
  * disturbed. Twenty steps take about 130 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
+ *
+ * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it
+ * would move about 40 degrees, and the shadows' cost moves with it (the shadow casters Etna can leave
+ * out depend on where the sun stands against the view), so the first and the last steps measured
+ * different scenes. The weather holds too: rain that starts or stops during a run takes the shadows (and
+ * the rain's own drawing) with it, so the client keeps the rain and thunder of the run's first frame and
+ * gets the server's latest back when the run ends. The game's own clock runs on; only what is drawn
+ * waits. If the two "Etna as set" steps still land far apart, the table and the chat say the run is
+ * unsteady, and a step that drew no shadow map while the others did says so in its row.
  *
  * The settings are only changed in memory. The run never saves them, and puts every one of them back
  * when it ends, when the player leaves the world, opens any menu (the only way to reach Etna's
@@ -87,6 +97,7 @@ public final class EtnaBenchmark {
 	 * pass as in 0.6.0.
 	 */
 	private static final String AA_OFF = "anti-aliasing off";
+	private static final String SHADOWS_OFF = "shadows off";
 
 	private static final List<Step> STEPS = List.of(
 		new Step("Etna off", Role.ETNA_OFF, () -> EtnaConfig.enabled = false, base -> true),
@@ -106,7 +117,7 @@ public final class EtnaBenchmark {
 			base -> base.shadowDistance != 96.0F),
 		new Step(CULLING_OFF, Role.SHADOWS, () -> EtnaConfig.shadowCulling = false,
 			base -> base.shadowCulling),
-		new Step("shadows off", Role.SHADOWS, () -> EtnaConfig.shadows = false,
+		new Step(SHADOWS_OFF, Role.SHADOWS, () -> EtnaConfig.shadows = false,
 			base -> base.shadows),
 		new Step(AA_OFF, Role.OTHER, () -> EtnaConfig.antiAliasing = false,
 			base -> base.antiAliasing),
@@ -187,9 +198,70 @@ public final class EtnaBenchmark {
 	/** Frames over the hitch limit in the measurement under way. */
 	private static int windowLongFrames;
 	private static String setupText = "";
+	/** The sun's angle the run holds, as the first frame of the run had it; NaN until then and outside a run. */
+	private static float heldSunAngle = Float.NaN;
+	/** The rain and thunder levels the run holds, as its first frame had them; NaN until then and outside a run. */
+	private static float heldRain = Float.NaN;
+	private static float heldThunder;
+	/** The latest rain and thunder levels the server sent during the run, given back when it ends. */
+	private static float serverRain;
+	private static float serverThunder;
+	/** "Etna as set" steps further apart than this share of their frame time (or UNSTEADY_MS) make a run unsteady. */
+	private static final double UNSTEADY_SHARE = 0.05;
+	private static final double UNSTEADY_MS = 0.4;
 	private static boolean keyWatched;
 
 	private EtnaBenchmark() {
+	}
+
+	/**
+	 * Once per frame, before Etna or the sky read the frame's sky state (LevelRendererMixin): during a run
+	 * the sun stays where it stood on the run's first frame.
+	 */
+	public static void holdSun(SkyRenderState sky) {
+		if (snapshot == null) {
+			return;
+		}
+		if (Float.isNaN(heldSunAngle)) {
+			heldSunAngle = sky.sunAngle;
+		} else {
+			sky.sunAngle = heldSunAngle;
+		}
+	}
+
+	/**
+	 * Start of every frame of a run, before the frame reads the level: the rain and thunder stay as the run's
+	 * first frame had them. The server's packets set the level's values during the client ticks before
+	 * this, so a value other than the held one is the server's newest, kept for the end of the run.
+	 */
+	private static void holdWeather(ClientLevel world) {
+		float rain = world.getRainLevel(1.0F);
+		float thunder = world.getThunderLevel(1.0F);
+		if (Float.isNaN(heldRain)) {
+			heldRain = rain;
+			heldThunder = thunder;
+			serverRain = rain;
+			serverThunder = thunder;
+			return;
+		}
+		if (rain != heldRain) {
+			serverRain = rain;
+		}
+		if (thunder != heldThunder) {
+			serverThunder = thunder;
+		}
+		world.setRainLevel(heldRain);
+		world.setThunderLevel(heldThunder);
+	}
+
+	/** The run ends: the level gets the weather the server sent last. */
+	private static void releaseWeather() {
+		ClientLevel world = level;
+		if (!Float.isNaN(heldRain) && world != null) {
+			world.setRainLevel(serverRain);
+			world.setThunderLevel(serverThunder);
+		}
+		heldRain = Float.NaN;
 	}
 
 	/** Called by the settings menu's button, after the menu has closed and saved the settings. */
@@ -208,6 +280,8 @@ public final class EtnaBenchmark {
 		// The JVM's garbage collection counters load on first use, which takes a moment: now, not inside a step.
 		EtnaProfiler.gcTotals();
 		snapshot = new Snapshot();
+		heldSunAngle = Float.NaN;
+		heldRain = Float.NaN;
 		level = mc.level;
 		step = -1;
 		settling = true;
@@ -305,6 +379,7 @@ public final class EtnaBenchmark {
 			// Standing still is the point here: keep the game's "AFK" frame limit (30 fps after a minute
 			// without input) out of the run.
 			mc.getFramerateLimitTracker().onInputReceived();
+			holdWeather(mc.level);
 			if (step < 0) {
 				begin(0, now);
 				return;
@@ -419,6 +494,7 @@ public final class EtnaBenchmark {
 
 	private static void finish() {
 		restore(false);
+		boolean unsteady = unsteady();
 		try {
 			EtnaClient.LOGGER.info(table("[Etna] Benchmark finished, every setting is back as it was."));
 		} catch (RuntimeException e) {
@@ -426,7 +502,13 @@ public final class EtnaBenchmark {
 		} finally {
 			clear();
 		}
-		Minecraft.getInstance().showDebugChat(Component.translatable("etna.benchmark.done"));
+		Minecraft.getInstance().showDebugChat(Component.translatable(unsteady ? "etna.benchmark.unsteady" : "etna.benchmark.done"));
+	}
+
+	/** The two "Etna as set" steps landed further apart than a steady scene leaves them. */
+	private static boolean unsteady() {
+		Reference set = reference(Role.AS_SET);
+		return set.spreadMs() > Math.max(UNSTEADY_MS, UNSTEADY_SHARE * set.intervalMs());
 	}
 
 	/**
@@ -487,6 +569,8 @@ public final class EtnaBenchmark {
 
 	private static void clear() {
 		snapshot = null;
+		heldSunAngle = Float.NaN;
+		releaseWeather();
 		level = null;
 		measuring = false;
 		settling = false;
@@ -676,6 +760,11 @@ public final class EtnaBenchmark {
 		if (noise.length() > 0) {
 			out.append("  Noise: ").append(noise).append("; treat smaller differences as noise.\n");
 		}
+		if (unsteady()) {
+			out.append("  UNSTEADY RUN: the two \"Etna as set\" steps landed far apart, so the scene changed during the run (chunks")
+				.append(" loading, weather, mobs or the view). The savings below are rough: run it again, standing still, once")
+				.append(" the chunks around have loaded.\n");
+		}
 		// A change smaller than the noise is not a saving, nor is one under 0.1 ms.
 		double noiseMs = Math.max(0.1, Math.max(set.spreadMs(), off.spreadMs()));
 		List<Integer> savers = new ArrayList<>();
@@ -733,6 +822,16 @@ public final class EtnaBenchmark {
 		return text;
 	}
 
+	/** Whether an "Etna as set" step drew the shadow map: if not, no step missing one stands out. */
+	private static boolean shadowsDrawnAsSet() {
+		for (int i = 0; i < STEPS.size(); i++) {
+			if (STEPS.get(i).role() == Role.AS_SET && results[i] != null && results[i].casterFrames() > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** Whether the measurement a step kept was still disturbed: it ran out of tries. */
 	private static boolean disturbed(int index, EtnaProfiler.Result r) {
 		return r.motion() > MOVE_LIMIT || r.turned() || longFrames[index] > 0;
@@ -766,6 +865,10 @@ public final class EtnaBenchmark {
 			note.add("same settings as Etna as set");
 		} else if (s.role() == Role.SHADOWS && base != null && !base.shadows) {
 			note.add("shadows were off");
+		}
+		if (base != null && base.shadows && s.role() != Role.ETNA_OFF && !s.name().equals(SHADOWS_OFF) && r.levelFrames() > 0
+			&& r.casterFrames() == 0 && shadowsDrawnAsSet()) {
+			note.add("no shadow map drawn");
 		}
 		if (s.role() == Role.UNDER_WATER) {
 			note.add("only differs under water");

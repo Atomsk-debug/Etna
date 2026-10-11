@@ -2,6 +2,7 @@ package it.cosimo.etna.mixin;
 
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
+import it.cosimo.etna.EtnaBenchmark;
 import it.cosimo.etna.EtnaGpuTimer;
 import it.cosimo.etna.EtnaLook;
 import it.cosimo.etna.EtnaMotes;
@@ -48,6 +49,7 @@ public abstract class LevelRendererMixin {
 		boolean consistentDepthRequired,
 		CallbackInfo ci
 	) {
+		EtnaBenchmark.holdSun(levelRenderState.skyRenderState);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_START);
 		EtnaShadows.prepareFrame((LevelRenderer) (Object) this, levelRenderState, fogBuffer, true);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_END);
@@ -70,6 +72,7 @@ public abstract class LevelRendererMixin {
 		boolean consistentDepthRequired,
 		CallbackInfo ci
 	) {
+		EtnaBenchmark.holdSun(levelRenderState.skyRenderState);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_START);
 		EtnaShadows.prepareFrame((LevelRenderer) (Object) this, levelRenderState, fogBuffer, false);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_END);
