@@ -9,7 +9,7 @@
 layout(std140) uniform EtnaShadow {
     mat4 EtnaShadowMat;  // camera-relative position -> shadow map clip space
     vec4 EtnaLightDir;   // xyz: direction towards the sun (or the moon at night), w: light strength
-    vec4 EtnaShadowInfo; // x: 1 / map size, y: covered radius in blocks, z: depth units per block, w: the light rays setting (read by no shader since the shafts became a post pass, which takes it from EtnaSettings)
+    vec4 EtnaShadowInfo; // x: 1 / map size, y: covered radius in blocks, z: depth units per block, w: the share of the radius the map always covers round the camera, on each axis (EtnaShadows.shadowReach; up to 0.8.1 the light rays setting, read by no shader)
     vec4 EtnaLook;       // settings menu. x: shadow softness in texels, y: shadow darkness, z: sunlight, w: distance haze
     vec4 EtnaLook2;      // x: water reflections, y: warmth (-1 cool .. 1 warm), z: frame counter, w: 1 when the shadow map was drawn this frame
     vec4 EtnaFaceShade;  // vanilla's fixed shading per face in this dimension. x: down, y: up, z: north/south, w: west/east

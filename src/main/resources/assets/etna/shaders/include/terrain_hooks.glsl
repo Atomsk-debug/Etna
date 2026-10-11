@@ -9,7 +9,7 @@ float shadowVisibility(vec3 normal, bool thin); // shadeTerrain: filtered shadow
 float shadowAt(vec3 position);                  // sunGlint, waterFromBelow, etnaWaterPrepare: unfiltered lookup at a camera-relative point
 float shadowAtSample(vec3 position, float pick); // underwaterShafts: the same, one map per jittered sample
 float shadowSoftAt(vec3 position);              // waterBodyShadow: the same, with the four texels round the point blended
-vec4 shadowSpace(vec3 position);                // a camera-relative point in the map: xy uv, z expected depth, w how far out (1 at the edge)
+vec4 shadowSpace(vec3 position);                // a camera-relative point in the map: xy uv, z expected depth, w how far out from the camera (1 at the edge, etnaMapOut)
 float leafBacklight();                          // leafGlow: sunlight through the leaves to this one, 0 .. 1
 // terrain_clouds.glsl: the clouds' shadows, in the same draws.
 float etnaCloudShadow();                        // shadeTerrain: direct light the clouds let through, 1 in the open .. 1 - strength under a cloud

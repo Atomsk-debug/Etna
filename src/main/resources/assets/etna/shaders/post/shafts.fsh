@@ -58,10 +58,12 @@ ivec2 subpixel(int i) {
 
 // 1 where the sun reaches a point of the ray, given as a position in the shadow map's clip space, 0 where
 // something nearer the light blocks it. The same test and bias as the terrain's unfiltered lookups
-// (terrain_shadow.glsl), and outside the map, or fading towards its edge, the point counts as lit.
+// (terrain_shadow.glsl), and outside the map, or fading towards its edge, the point counts as lit. How far
+// out it lies is counted from the camera, as the terrain's etnaMapOut does, so the shafts end where the shadows do.
 float sunAt(vec3 clip) {
-    float edge = max(abs(clip.x), abs(clip.y));
-    if (edge >= 1.0) {
+    vec2 away = abs(clip.xy - EtnaShadowMat[3].xy);
+    float edge = max(away.x, away.y) / (EtnaShadowInfo.w > 0.0 ? EtnaShadowInfo.w : 1.0);
+    if (edge >= 1.0 || max(abs(clip.x), abs(clip.y)) >= 1.0) {
         return 1.0;
     }
     vec2 uv = clip.xy / etnaShadowFactor(clip.xy) * 0.5 + 0.5;
