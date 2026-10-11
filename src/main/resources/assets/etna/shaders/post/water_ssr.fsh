@@ -275,9 +275,9 @@ void main() {
     vec3 toEye = -position / dist;
     // The sky's reflection the water drew, and how strong, came off the full swell; the ray follows a
     // calmer one.
-    vec3 dir = reflect(-toEye, n);
+    vec3 dir = waterSeenMirror(reflect(-toEye, n), footprint);
     vec3 ray = reflect(-toEye, normalize(vec3(-slope.x * TRACE_WAVES, 1.0, -slope.y * TRACE_WAVES)));
-    float mirror = waterFresnel(dot(toEye, n)) * WaterSsr.x;
+    float mirror = waterFresnel(waterSeenCos(dot(toEye, n), footprint)) * WaterSsr.x;
     // The haze and the render-distance fog the water shader's colour went through (aerialHaze in
     // terrain_dark.glsl, calculateFinalColor in terrain.fsh), for the light the reflection adds or takes away.
     float openSky = Air.w > 0.5 ? 1.0 - Shafts.z : 0.0;
