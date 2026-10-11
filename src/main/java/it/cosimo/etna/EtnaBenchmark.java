@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * A step whose camera moves or turns, or that hits a frame over 50 ms (a pipeline compile, chunks
  * loading, a garbage collection), starts measuring again half a second later, up to three tries; only a
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
- * disturbed. Twenty-two steps take about 145 seconds. The run moves on from the start of each frame; a
+ * disturbed. Twenty-three steps take about 150 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
  *
  * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it

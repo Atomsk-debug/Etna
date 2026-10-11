@@ -25,7 +25,7 @@ Start here. Quality sets how much work Etna does, Look sets the colours and mood
 * **World Resolution**: How many pixels the world is drawn at, as a share of the screen's width and height. Below 100% Etna draws the world smaller and its anti-aliasing builds the full picture back up over a few frames, the way DLSS and FSR do: much faster, a little softer, mostly in motion. 75% draws about half the pixels. The hand, the HUD and menus stay sharp. Needs anti-aliasing, which every Quality but Low has.
 * **Resolution** *(macOS only)*: Half draws a quarter of the pixels and lets macOS scale the picture up: much faster, but blurry. Applies after restarting the game, and only when Etna is on as the game starts.
 * **Performance log**: Summary writes a line to latest.log every few seconds while you play: frame rate, frame time and where it goes, on the CPU and on the GPU (timed on one frame in eight, so the frame rate stays the normal one). Off writes nothing.
-* **Run benchmark**: Takes about 145 seconds, in a world: Etna tries its settings one at a time, writes what each one costs to latest.log, then puts everything back as it was. Stand still and don't move the mouse: a step disturbed by a camera move or a stutter is measured again, which can add up to about 20 seconds. Turn any frame-rate limiter mod and VSync off first.
+* **Run benchmark**: Takes about 150 seconds, in a world: Etna tries its settings one at a time, writes what each one costs to latest.log, then puts everything back as it was. Stand still and don't move the mouse: a step disturbed by a camera move or a stutter is measured again, which can add up to about 20 seconds. Turn any frame-rate limiter mod and VSync off first.
 
 ## Mood
 
