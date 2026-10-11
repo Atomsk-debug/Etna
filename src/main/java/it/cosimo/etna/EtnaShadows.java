@@ -197,8 +197,10 @@ public final class EtnaShadows {
 	 * leaf's holes at new points. Until 0.8.1 it followed a texel at a time, which while walking is most frames,
 	 * and the dappled shade under trees and the edges further out shimmered as long as the camera moved. Now
 	 * the map holds still for two blocks of walking, about half a second, and steps once. The camera stays
-	 * within about two blocks of the middle, where the warp has made texels 7% wider than right on it (16%
-	 * along the line to the middle).
+	 * within a block and a half of the middle on each axis, where the warp has made texels at most 7% wider
+	 * than right on it at a 160-block shadow distance (15% along the line to the middle), and 12% (26%) at 96:
+	 * a few thousandths of a block. The shadows end MIDDLE_HOLD of a step plus MIDDLE_SLACK_BLOCKS, about
+	 * three and a half blocks, short of the shadow distance (shadowReach), so where they end holds still too.
 	 */
 	private static final double MIDDLE_STEP_BLOCKS = 2.0;
 	private static final double MIDDLE_HOLD = 0.75;

@@ -21,9 +21,12 @@
 // (EtnaShadowInfo.w). 0 at the camera, 1 where that share ends, a little inside the map's own edge. The map's
 // middle follows the camera in steps of about two blocks (EtnaShadows.MIDDLE_STEP_BLOCKS); counted from the
 // camera, the shadows fade out at the same distance whichever step it is at, instead of jumping by a step.
+// A point off the map itself counts as past the edge too: while the maps fade, the older one is read a frame
+// after it was drawn, and a camera flying faster than EtnaShadows.MIDDLE_SLACK_BLOCKS a frame can leave it.
 float etnaMapOut(vec2 ndc, mat4 shadowMat) {
     vec2 away = abs(ndc - shadowMat[3].xy);
-    return max(away.x, away.y) / (EtnaShadowInfo.w > 0.0 ? EtnaShadowInfo.w : 1.0);
+    float reach = max(away.x, away.y) / (EtnaShadowInfo.w > 0.0 ? EtnaShadowInfo.w : 1.0);
+    return max(abs(ndc.x), abs(ndc.y)) < 1.0 ? reach : max(reach, 1.0);
 }
 
 // Size of a shadow texel at this spot of the map, in blocks, along its coarser (radial) direction.
