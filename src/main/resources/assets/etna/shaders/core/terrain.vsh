@@ -76,6 +76,16 @@ const int TAG_MATERIAL = 200;
 // Leaves sway 7/16 as far as a plant's free end, which EtnaFoliage gives the edge of a plant hanging from leaves.
 const float PLANT_SWAY = 0.11;
 const float LEAF_SWAY = PLANT_SWAY * 7.0 / 16.0;
+#ifdef ETNA_SHADOW_PASS
+// In the shadow map leaves and plants only sway near the camera. Further out a texel of the map is wider than
+// the sway (0.07 of a block at 32 blocks, at a 160-block shadow distance and a 3072 map; more with a smaller
+// map), and a sway the map can't follow only flips its leaf texels between lit and shaded: far leaf shade
+// twinkled frame after frame even with the camera still. On screen, from about 40 blocks out the sway is less
+// than a pixel anyway. Between these distances from the camera the shadows' sway fades out; the leaves
+// themselves still sway, by less than the offset that keeps them from shadowing themselves (terrain_shadow.glsl).
+const float SHADOW_SWAY_NEAR = 20.0;
+const float SHADOW_SWAY_FAR = 44.0;
+#endif
 
 // GameTime starts again every 24000 ticks (20 minutes). Every motion below repeats a whole number of times
 // in that span (its rate a multiple of LOOP, in radians a second), so foliage never jumps when it does.
@@ -87,7 +97,7 @@ const float LOOP = 6.2831853 / 1200.0;
 // than all at once. Along the wind the pattern repeats every GUST_CELLS patches (4800 blocks), the
 // distance the wind covers in 20 minutes, so it carries on unbroken when GameTime starts again. Only
 // GameTime and the world position go in: the shadow pass, which has no Etna block, moves its leaves
-// exactly like the main pass.
+// exactly like the main pass (near the camera: SHADOW_SWAY_NEAR).
 const vec2 WIND = vec2(0.9285, 0.3714);
 const vec2 GUST_SIZE = vec2(16.0, 28.0);
 const float GUST_SPEED = 4.0;
@@ -140,19 +150,27 @@ void main() {
     float time = GameTime * 1200.0;
 
     float material = 0.0;
+    // How much of the sway this draw gives leaves and plants: all of it, but in the shadow map only near the camera.
+    #ifdef ETNA_SHADOW_PASS
+    float swayed = 1.0 - smoothstep(SHADOW_SWAY_NEAR, SHADOW_SWAY_FAR, length(pos));
+    #else
+    const float swayed = 1.0;
+    #endif
     // The tag goes back to an alpha of 1, as vanilla has it, for the alpha test and everything after.
     vec4 color = Color;
     int tag = int(Color.a * 255.0 + 0.5);
     if (tag == TAG_LEAVES) {
         material = 1.0;
         color.a = 1.0;
-        pos += waveOffset(world, time, LEAF_SWAY);
+        if (swayed > 0.0) {
+            pos += waveOffset(world, time, LEAF_SWAY * swayed);
+        }
     } else if (tag >= TAG_PLANT_SHADED && tag < TAG_LEAVES) {
         // 2 on a face vanilla shaded as if it faced up, 2.25 on one it shaded by the way it faces (terrain.fsh).
         bool asUp = tag >= TAG_PLANT;
         material = asUp ? 2.0 : 2.25;
         color.a = 1.0;
-        float sway = float(tag - (asUp ? TAG_PLANT : TAG_PLANT_SHADED)) / 16.0;
+        float sway = float(tag - (asUp ? TAG_PLANT : TAG_PLANT_SHADED)) / 16.0 * swayed;
         if (sway > 0.0) {
             pos += waveOffset(world, time, PLANT_SWAY * sway);
         }

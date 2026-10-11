@@ -66,6 +66,10 @@
                     "sampler_name": "Depth",
                     "target": "minecraft:main",
                     "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "SsrHistory",
+                    "target": "shafts"
                 }
             ],
             "output": "water_ssr",

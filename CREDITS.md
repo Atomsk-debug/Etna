@@ -1,8 +1,7 @@
 # Credits
 
 Etna is original code under the MIT licence (`LICENSE`), with these exceptions: the temporal anti-aliasing
-pass, the shadow map distortion and the water's Fresnel function are ported from another shader pack, under
-that pack's own licence; the sky's star hash is David Hoskins's, under the MIT licence; and the terrain and
+pass is ported from another shader pack, under that pack's own licence; the sky's star hash is David Hoskins's, under the MIT licence; and the terrain and
 cloud shaders are based on Minecraft's own, which Etna's licence doesn't cover.
 
 ## Code ported from other projects
@@ -10,10 +9,8 @@ cloud shaders are based on Minecraft's own, which Etna's licence doesn't cover.
 | Etna file | Source | Licence |
 |---|---|---|
 | `src/main/resources/assets/etna/shaders/post/taa.fsh` | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `program/c4_taa_exposure.fsh` (TAA, neighbourhood and variance clipping, offcenter rejection) and `include/utility/bicubic.glsl` (fast Catmull-Rom history filter), adapted to Minecraft's reversed depth buffer and Etna's camera matrices | Photon Shaders License, see `LICENSE-PHOTON.txt` |
-| `src/main/resources/assets/etna/shaders/include/shadow_distortion.glsl`: `etnaShadowFactor`, used in `src/main/resources/assets/etna/shaders/core/terrain.vsh` (shadow pass), `src/main/resources/assets/etna/shaders/include/terrain_shadow.glsl` (shadow map lookups) and `src/main/resources/assets/etna/shaders/post/shafts.fsh` (the light shafts' lookups) | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `include/lighting/shadows/distortion.glsl` (quartic-length shadow map distortion) | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/core/sky.fsh`: `hash33` (where the stars sit, how bright they are, their colour) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash33`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
 | `src/main/resources/assets/etna/shaders/core/sky.vsh`: `hash41` (when and where a shooting star flares, which way it falls) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash41`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
-| `src/main/resources/assets/etna/shaders/include/terrain_water.glsl`: `fresnelDielectric` | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `include/lighting/bsdf.glsl`, `fresnel_dielectric_n` (Fresnel reflectance with total internal reflection, for Snell's window seen from under water), with floored divisors and a clamp added | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/post/shafts.fsh`: `SUBPIXEL` (the order in which the light shafts' half-resolution pixels take turns) | [Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge: `checkerboard.glsl`, the same 2×2 order | Photon Shaders License, see `LICENSE-PHOTON.txt` |
 | `src/main/resources/assets/etna/shaders/core/terrain.vsh`, `terrain.fsh`, `clouds.vsh`, `clouds.fsh`, `weather.vsh`, `weather.fsh` | Minecraft's vanilla `terrain`, `clouds` and `particle` core shaders, which Etna replaces while it is on and extends (`weather` is made from `particle`, which vanilla draws rain and snow with) | Based on Minecraft's vanilla shader, (c) Mojang AB, not covered by Etna's MIT licence |
 
@@ -59,6 +56,14 @@ first, or original replacements for them.
   depth buffer, signed so each line falls on the nearer side. The pack families and their colour traits come
   from Etna's own study of the packs' published screenshots; no pack assets are used.
 * Noise: interleaved gradient noise (Jorge Jimenez, 2014).
+* Shadows (`shadow_distortion.glsl`, `terrain_shadow.glsl`, 0.8.1): the shadow map's distortion is Etna's
+  own. A texel's size grows as (r + c)², which keeps up with the ground's foreshortening away from the camera
+  (the classic perspective-matching idea of shadow map warping); r is sqrt(1 - (1 - x²)(1 - y²)), which is
+  the plain distance from the map's centre near it and reaches 1 all along the map's square edge, so the
+  whole map is used and it never folds over. The soft edges are an area-weighted box of texels against a
+  receiver plane, and contact hardening follows percentage-closer soft shadows (Randima Fernando,
+  "Percentage-Closer Soft Shadows", NVIDIA, 2005), with a fixed search pattern and a disc turned only where
+  it is wide.
 * Shadow casters (`EtnaShadows.java`): only the chunk sections whose shadow can fall on something the
   camera sees are drawn into the shadow map. The view is extruded towards the light: the sides of the view
   that face away from the light, and a plane along the light through each edge where such a side meets one
@@ -98,6 +103,11 @@ first, or original replacements for them.
   depth as the guide (Johannes Kopf, Michael F. Cohen, Dani Lischinski and Matt Uyttendaele, "Joint Bilateral
   Upsampling", SIGGRAPH 2007). The mist's look (valley mist at dawn and dusk, haze at night and in rain, cave
   fog) follows Complementary Reimagined; no code from it.
+* Water Fresnel (`terrain_water.glsl`, `fresnelDielectric`, 0.8.1): the exact Fresnel reflectance of
+  unpolarised light at a dielectric boundary, in the form Robert Cook and Kenneth Torrance give ("A
+  Reflectance Model for Computer Graphics", 1982; also Walter, Marschner, Li and Torrance, "Microfacet
+  Models for Refraction through Rough Surfaces", 2007, eq. 22), with total internal reflection for
+  Snell's window seen from under water.
 * Under water (`terrain_water.glsl`), ideas after Photon with Etna's own code: the phase function of the
   light shafts, 0.7 × Henyey-Greenstein (g = 0.5) + 0.3 isotropic, as Photon's water; caustics as the
   change in area of light refracted by the surface (the idea of Photon's `program/shadow.fsh`,

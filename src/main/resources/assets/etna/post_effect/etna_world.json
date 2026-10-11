@@ -4,9 +4,15 @@
             "width": 960,
             "height": 540
         },
-        "water_ssr": {
+        "water_ssr0": {
             "width": 960,
-            "height": 540
+            "height": 540,
+            "persistent": true
+        },
+        "water_ssr1": {
+            "width": 960,
+            "height": 540,
+            "persistent": true
         },
         "air": {},
         "history0": {
@@ -72,9 +78,13 @@
                     "sampler_name": "Depth",
                     "target": "minecraft:main",
                     "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "SsrHistory",
+                    "target": "water_ssr0"
                 }
             ],
-            "output": "water_ssr",
+            "output": "water_ssr1",
             "uniforms": {
                 "EtnaSettings": [
                     {
@@ -121,7 +131,7 @@
                 },
                 {
                     "sampler_name": "WaterSsr",
-                    "target": "water_ssr"
+                    "target": "water_ssr1"
                 }
             ],
             "output": "air",
