@@ -6,12 +6,13 @@
 // 0.8.0 traced a different pixel of the block each frame along steps shifted by noise, for the
 // anti-aliasing to average, but where only some rays met a thin edge (leaves, a fence, a block's corner)
 // the anti-aliasing kept them as specks, and the reflections read as dots. The same rays every frame give
-// a steady image that only moves with the camera and the waves. The rays are traced where the pixel's
-// centre would be without the anti-aliasing's jitter, and every read of the depth and the picture is moved
-// by the jitter to where the picture holds that point, so a still scene gives the same rays every frame.
+// a steady image that only moves with the camera and the waves. Each ray starts from the point of the water
+// the jittered pixel shows (up to half a pixel from its centre, a different way each frame), worked out
+// without the jitter, and every read of the depth and the picture is moved by the jitter to where the
+// picture holds the point it wants, so the rays stay true to the scene whatever the jitter.
 //
 // Even so, where a ray only just meets or misses an edge it can go either way from one frame to the next
-// (the jittered picture's edges move by up to half a pixel, the waves move on), and a whole 2x2 block, then
+// (its start moves by up to half a pixel, the waves move on), and a whole 2x2 block, then
 // spread over its neighbours by the world pass, changes at once: too smooth for the anti-aliasing, which
 // keeps the old frames only where they fit the new one's neighbouring pixels, to tell from a real change,
 // so the reflection flickered. With anti-aliasing on, each texel is now blended with the last frames' own
@@ -157,6 +158,11 @@ void nothing() {
     fragColor = vec4(0.0);
 }
 
+// How far, in blocks, the distance from the camera changes across the few pixels between a point and the
+// history texels round it (main sets it from the pixel's size on the water): on water seen at a grazing
+// angle far away, several blocks a pixel.
+float historySlack = 0.0;
+
 // The last frames' change for the water point at camera-relative `position`: rgb, and in a how much of it can
 // be gone by (0 none: no history, the point off last frame's screen, or no water at its distance there).
 vec4 lastChange(vec3 position) {
@@ -174,7 +180,7 @@ vec4 lastChange(vec3 position) {
         return vec4(0.0);
     }
     // Texel c held pixel 2c: blend the four round the point, each only if it held water at the point's
-    // distance from last frame's camera.
+    // distance from last frame's camera, give or take how much that distance changes across them.
     vec2 c = (uv * DepthSize - 0.5) * 0.5;
     ivec2 base = ivec2(floor(c));
     vec2 f = c - vec2(base);
@@ -186,7 +192,7 @@ vec4 lastChange(vec3 position) {
         ivec2 o = ivec2(i & 1, i >> 1);
         vec4 texel = texelFetch(SsrHistorySampler, clamp(base + o, ivec2(0), last), 0);
         float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
-        if (texel.a > 0.0 && abs(texel.a - dist) < 0.3 + 0.03 * dist) {
+        if (texel.a > 0.0 && abs(texel.a - dist) < 0.3 + 0.03 * dist + historySlack) {
             sum += w * texel.rgb;
             weights += w;
         }
@@ -255,6 +261,11 @@ void main() {
         return;
     }
     float footprint = max(length(dx), length(dy));
+    // A history texel's point lies up to a texel (two pixels) from this one, and last frame's jitter put it
+    // up to half a pixel further: four pixels' change in distance covers both. Capped, so a pixel at the
+    // water's edge whose neighbour lies on something else can't let in any history at all.
+    vec3 toPoint = normalize(position);
+    historySlack = min(4.0 * max(abs(dot(dx, toPoint)), abs(dot(dy, toPoint))), 0.25 * length(position));
 
     // The swell where this pixel lies, as the water shader drew it (shadeWater): the same waves, as far as
     // the pixel resolves them.
