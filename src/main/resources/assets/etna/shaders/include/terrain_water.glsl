@@ -509,7 +509,7 @@ float waterThickness(vec3 surfacePos, out float found, out float trust) {
     // The map's projection is orthographic: a point moved on the water's plane moves its clip position
     // by the matrix's x and z columns, with no second trip through the matrix.
     vec3 clip = (EtnaShadowMat * vec4(surfacePos, 1.0)).xyz;
-    vec4 map = etnaShadowMapPoint(clip);
+    vec4 map = etnaShadowMapPoint(clip, EtnaShadowMat);
     if (map.w >= 1.0) {
         return 0.0;
     }
@@ -540,7 +540,7 @@ float waterThickness(vec3 surfacePos, out float found, out float trust) {
         float ringWeight = 0.0;
         for (int i = 0; i < 16; i++) {
             vec3 tap = THICKNESS_RING[i];
-            vec4 p = etnaShadowMapPoint(clip + alongX * tap.x + alongZ * tap.y);
+            vec4 p = etnaShadowMapPoint(clip + alongX * tap.x + alongZ * tap.y, EtnaShadowMat);
             if (p.w < 1.0) {
                 float stored = texelFetch(EtnaShadowSampler, clamp(ivec2(p.xy * size), ivec2(0), last), 0).r;
                 // Land beside the water stands above its plane and shade holds what casts it: neither counts.
@@ -670,7 +670,7 @@ float shoreFoam(vec2 p, float t) {
         return 0.0;
     }
     vec3 clip = (EtnaShadowMat * vec4(etnaViewPos, 1.0)).xyz;
-    vec4 here = etnaShadowMapPoint(clip);
+    vec4 here = etnaShadowMapPoint(clip, EtnaShadowMat);
     if (here.w >= 1.0) {
         return 0.0;
     }
@@ -689,7 +689,7 @@ float shoreFoam(vec2 p, float t) {
         if (i == 4) {
             continue;
         }
-        vec4 m = etnaShadowMapPoint(clip + alongX * (toMiddle.x + o.x) + alongZ * (toMiddle.y + o.y));
+        vec4 m = etnaShadowMapPoint(clip + alongX * (toMiddle.x + o.x) + alongZ * (toMiddle.y + o.y), EtnaShadowMat);
         if (m.w >= 1.0) {
             continue;
         }

@@ -15,6 +15,17 @@
 #define ETNA_SHADOW_GATHER
 #endif
 
+// How far out a point lies in the shadow map `shadowMat` draws, from its undistorted clip x and y: the larger of
+// its distances from the camera along the map's two axes (the camera sits at the matrix's last column, the
+// projection being orthographic), over the share of the map that always lies round the camera on every side
+// (EtnaShadowInfo.w). 0 at the camera, 1 where that share ends, a little inside the map's own edge. The map's
+// middle follows the camera in steps of about two blocks (EtnaShadows.MIDDLE_STEP_BLOCKS); counted from the
+// camera, the shadows fade out at the same distance whichever step it is at, instead of jumping by a step.
+float etnaMapOut(vec2 ndc, mat4 shadowMat) {
+    vec2 away = abs(ndc - shadowMat[3].xy);
+    return max(away.x, away.y) / (EtnaShadowInfo.w > 0.0 ? EtnaShadowInfo.w : 1.0);
+}
+
 // Size of a shadow texel at this spot of the map, in blocks, along its coarser (radial) direction.
 float etnaShadowTexel(float factor) {
     float texelBlocks = 2.0 * EtnaShadowInfo.y * EtnaShadowInfo.x;
@@ -148,7 +159,7 @@ float etnaShadowFilter(sampler2D map, mat4 shadowMat, vec3 normal, bool thin) {
     vec3 offset = thin ? EtnaLightDir.xyz * texelBlocks * 1.5 : normal * texelBlocks * 1.2;
     vec4 clip = shadowMat * vec4(etnaViewPos + offset, 1.0);
     vec3 ndc = clip.xyz / clip.w;
-    float edge = max(abs(ndc.x), abs(ndc.y));
+    float edge = etnaMapOut(ndc.xy, shadowMat);
     if (edge >= 1.0) {
         return 1.0;
     }
@@ -316,25 +327,24 @@ float shadowVisibility(vec3 normal, bool thin) {
     return mix(lit, 1.0, max(etnaLowSunFill(), etnaCasterFade(etnaViewPos)));
 }
 
-// shadowSpace for a point already in the map's clip space (EtnaShadowMat applied; the projection is
+// shadowSpace for a point already in the clip space of the map `shadowMat` draws (the projection is
 // orthographic, so w is 1): the distortion and the depth range, which are the same for every caller.
-vec4 etnaShadowMapPoint(vec3 ndc) {
+vec4 etnaShadowMapPoint(vec3 ndc, mat4 shadowMat) {
     #ifdef RENDERPEARL_DEPTH_IS_ZERO_TO_ONE
     float depth = ndc.z;
     #else
     float depth = ndc.z * 0.5 + 0.5;
     #endif
-    return vec4(ndc.xy / etnaShadowFactor(ndc.xy) * 0.5 + 0.5, depth, max(abs(ndc.x), abs(ndc.y)));
+    return vec4(ndc.xy / etnaShadowFactor(ndc.xy) * 0.5 + 0.5, depth, etnaMapOut(ndc.xy, shadowMat));
 }
 
 // Where a camera-relative point lands in the shadow map, without filtering. xy: its texture coordinates
 // in the (distorted) map; z: the depth the map stores for something at that point (reversed: bigger is
-// closer to the light); w: how far out in the map it lies, the larger of its undistorted |x| and |y|:
-// 0 at the centre, 1 at the edge of the area the map covers, above 1 outside it, where xy and z mean
-// nothing.
+// closer to the light); w: how far out in the map it lies (etnaMapOut): 0 at the camera, 1 at the edge of
+// the area the map always covers round it, above 1 outside it, where xy and z may mean nothing.
 vec4 shadowSpace(vec3 position) {
     vec4 clip = EtnaShadowMat * vec4(position, 1.0);
-    return etnaShadowMapPoint(clip.xyz / clip.w);
+    return etnaShadowMapPoint(clip.xyz / clip.w, EtnaShadowMat);
 }
 
 // The unfiltered test in `map` for a point from shadowSpace (or the same for the second map): 1 lit, 0 in
@@ -350,7 +360,7 @@ float etnaShadowTest(sampler2D map, vec4 point) {
 // The unfiltered test for a camera-relative point in the second map, the one the terrain fades to.
 float etnaShadowTest2(vec3 position) {
     vec4 clip = EtnaShadowMat2 * vec4(position, 1.0);
-    return etnaShadowTest(EtnaShadowSampler2, etnaShadowMapPoint(clip.xyz / clip.w));
+    return etnaShadowTest(EtnaShadowSampler2, etnaShadowMapPoint(clip.xyz / clip.w, EtnaShadowMat2));
 }
 
 // Shadow map lookup for a camera-relative point, without filtering: 1 lit, 0 in shadow. While the two
@@ -388,7 +398,7 @@ float shadowSoftAt(vec3 position) {
     float lit = etnaShadowSoft(EtnaShadowSampler, shadowSpace(position));
     if (EtnaShadowFade.x > 0.0) {
         vec4 clip = EtnaShadowMat2 * vec4(position, 1.0);
-        lit = mix(lit, etnaShadowSoft(EtnaShadowSampler2, etnaShadowMapPoint(clip.xyz / clip.w)), EtnaShadowFade.x);
+        lit = mix(lit, etnaShadowSoft(EtnaShadowSampler2, etnaShadowMapPoint(clip.xyz / clip.w, EtnaShadowMat2)), EtnaShadowFade.x);
     }
     return mix(lit, 1.0, max(etnaLowSunFill(), etnaCasterFade(position)));
 }
@@ -411,7 +421,7 @@ float shadowAtSample(vec3 position, float pick) {
 float etnaLeafThrough(sampler2D map, mat4 shadowMat) {
     vec4 clip = shadowMat * vec4(etnaViewPos + EtnaLightDir.xyz * 0.3, 1.0);
     vec3 ndc = clip.xyz / clip.w;
-    float edge = max(abs(ndc.x), abs(ndc.y));
+    float edge = etnaMapOut(ndc.xy, shadowMat);
     if (edge >= 1.0) {
         return 1.0;
     }

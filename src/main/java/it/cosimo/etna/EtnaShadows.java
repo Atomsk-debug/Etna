@@ -71,7 +71,8 @@ import org.lwjgl.system.MemoryStack;
  * shadows glide with the sun instead of shimmering along their edges.
  *
  * Before the main pass, the chunk sections that can shadow what the camera sees are drawn a second time
- * into a depth texture, looking along the light, with an orthographic projection centred on the camera:
+ * into a depth texture, looking along the light, with an orthographic projection centred near the camera
+ * (its middle follows the camera in steps of about two blocks, MIDDLE_STEP_BLOCKS):
  * solid terrain, then cutout terrain, nearest the light first, so the GPU shades as little of it as it
  * can. The
  * solid, cutout and classic-translucent terrain pipelines are then swapped for copies that also bind
@@ -188,6 +189,28 @@ public final class EtnaShadows {
 	private static final float RESTART_ANGLE = 0.035F;
 	private static final double RESTART_DISTANCE = 16.0;
 	/**
+	 * The map's middle follows the camera this many blocks at a time (rounded to whole texels of the map), and
+	 * only once the camera is MIDDLE_HOLD of a step away from it on either axis of the map: then it moves to the
+	 * step nearest the camera, so it can't flick back and forth while the camera stands near the edge of one.
+	 * The warp (shadow_distortion.glsl) is centred on the middle, so wherever the middle moves, every texel of the
+	 * map lands somewhere else on the world, by some fraction of a texel: the map takes every edge and every
+	 * leaf's holes at new points. Until 0.8.1 it followed a texel at a time, which while walking is most frames,
+	 * and the dappled shade under trees and the edges further out shimmered as long as the camera moved. Now
+	 * the map holds still for two blocks of walking, about half a second, and steps once. The camera stays
+	 * within about two blocks of the middle, where the warp has made texels 7% wider than right on it (16%
+	 * along the line to the middle).
+	 */
+	private static final double MIDDLE_STEP_BLOCKS = 2.0;
+	private static final double MIDDLE_HOLD = 0.75;
+	/**
+	 * How far a map's middle can be from the camera when the terrain reads it, on each axis, past the hold above
+	 * (a map is read at most a frame after it was drawn, while the maps fade: a camera flying at speed moves up
+	 * to a block or two in that frame). The shadows fade out by the same distance from the camera on every side
+	 * (EtnaShadowInfo.w), this much inside the map's edge, so wherever the middle is they fade out at the same
+	 * place and never meet the map's edge.
+	 */
+	private static final double MIDDLE_SLACK_BLOCKS = 2.0;
+	/**
 	 * While the maps fade, each is drawn every other frame and read on the next one too, after the camera may
 	 * have turned: its casters are then kept for a screen this many screen widths wider on every side (about
 	 * three degrees of turn per frame). A faster turn finishes the fade at once (covers).
@@ -255,6 +278,16 @@ public final class EtnaShadows {
 	/** The level the maps were drawn in, held weakly: after leaving a world the menus must not keep it alive. */
 	private static WeakReference<@Nullable Object> stepLevel = new WeakReference<>(null);
 	private static float stepRadius;
+	/**
+	 * Each map's middle, in blocks along the map's x and y axes from the world's origin (MIDDLE_STEP_BLOCKS), for
+	 * the direction and step it was found for: another direction or step finds it afresh. NaN until a map is drawn.
+	 */
+	private static final double[][] middles = {{Double.NaN, Double.NaN}, {Double.NaN, Double.NaN}};
+	private static final Vector3f[] middleDirs = {new Vector3f(), new Vector3f()};
+	private static final double[] middleSteps = new double[2];
+	/** The camera's place from the middle of the map being drawn, along the map's x and y axes, in blocks. */
+	private static float middleLeadX;
+	private static float middleLeadY;
 	/** The extra screen widths this frame's map keeps casters for (FADE_SLACK while fading), and what it got. */
 	private static float drawSlack;
 	private static float drawnSlack;
@@ -443,14 +476,14 @@ public final class EtnaShadows {
 		float radius = EtnaConfig.shadowDistance;
 
 		Matrix4f rotation = new Matrix4f().lookAlong(-light.x, -light.y, -light.z, 0.0F, 0.0F, 1.0F);
-		// Snap the map to its own texel grid in world space, so shadow edges don't crawl as you move.
+		// The map's middle holds still in the world and follows the camera in steps (MIDDLE_STEP_BLOCKS).
 		Vec3 cam = state.cameraRenderState.pos;
-		double texel = 2.0 * radius / size;
 		double lx = cam.x * rotation.m00() + cam.y * rotation.m10() + cam.z * rotation.m20();
 		double ly = cam.x * rotation.m01() + cam.y * rotation.m11() + cam.z * rotation.m21();
-		float snapX = (float) (lx - Math.floor(lx / texel) * texel);
-		float snapY = (float) (ly - Math.floor(ly / texel) * texel);
-		Matrix4f shadowView = new Matrix4f().translation(snapX, snapY, 0.0F).mul(rotation);
+		double[] middle = followMiddle(map, light, middleStep(radius, size), lx, ly);
+		middleLeadX = (float) (lx - middle[0]);
+		middleLeadY = (float) (ly - middle[1]);
+		Matrix4f shadowView = new Matrix4f().translation(middleLeadX, middleLeadY, 0.0F).mul(rotation);
 
 		boolean zeroToOne = RenderSystem.getDevice().getDeviceInfo().isZZeroToOne();
 		// Reversed depth like the rest of the game: near and far swapped, so 1 is closest to the light.
@@ -498,6 +531,41 @@ public final class EtnaShadows {
 		return true;
 	}
 
+	/** How far the map's middle moves at a time, in blocks: MIDDLE_STEP_BLOCKS rounded to whole texels of the map. */
+	private static double middleStep(float radius, int size) {
+		double texel = 2.0 * radius / size;
+		return texel * Math.max(1L, Math.round(MIDDLE_STEP_BLOCKS / texel));
+	}
+
+	/**
+	 * Map `map`'s middle for a camera at lx, ly along its axes (light): where it was, unless the camera has gone
+	 * MIDDLE_HOLD of a step past it on an axis, or the map now looks along another direction or the step changed
+	 * (another map size or shadow distance); then the step nearest the camera on that axis (on both, for a new
+	 * direction or step). A camera far away (a teleport) is far past any hold.
+	 */
+	private static double[] followMiddle(int map, Vector3f light, double step, double lx, double ly) {
+		double[] middle = middles[map];
+		boolean fresh = middleSteps[map] != step || !middleDirs[map].equals(light) || !Double.isFinite(middle[0]) || !Double.isFinite(middle[1]);
+		double hold = MIDDLE_HOLD * step;
+		if (fresh || !(Math.abs(lx - middle[0]) <= hold)) {
+			middle[0] = Math.rint(lx / step) * step;
+		}
+		if (fresh || !(Math.abs(ly - middle[1]) <= hold)) {
+			middle[1] = Math.rint(ly / step) * step;
+		}
+		middleSteps[map] = step;
+		middleDirs[map].set(light);
+		return middle;
+	}
+
+	/**
+	 * The farthest the camera can be from a map's middle on either axis when the terrain reads that map, in
+	 * blocks: the hold, and a frame of flying (MIDDLE_SLACK_BLOCKS).
+	 */
+	private static float middleLeadMax(float radius, int size) {
+		return (float) (MIDDLE_HOLD * middleStep(radius, size) + MIDDLE_SLACK_BLOCKS);
+	}
+
 	/**
 	 * Which map to draw this frame. Turned with the sun every frame, the map moved every shadow edge by a whole
 	 * texel at a time, here and there along it, as the sun crept on (the area-weighted filter smooths how a
@@ -505,7 +573,7 @@ public final class EtnaShadows {
 	 * day. Now a map's direction holds still until the sun has moved the shadow of something STEP_HEIGHT
 	 * blocks up by STEP_SHIFT. Then the other map is drawn along the sun's new direction and the terrain fades
 	 * over to it: between two maps that hold still, an edge glides instead of flickering. Held still, a map
-	 * drawn again every frame comes out the same, texel for texel: the camera's moves are snapped to its grid.
+	 * drawn again every frame comes out the same, texel for texel, while its middle holds still (followMiddle).
 	 * While the two fade they take turns being drawn, so each is at most a frame old (settleMaps moves the older
 	 * one to this frame's camera) and the shadow pass costs what one map did. A fade starts by drawing the held
 	 * map once more, so neither map is ever read on a frame after the one it was drawn for unless its casters
@@ -732,8 +800,10 @@ public final class EtnaShadows {
 		}
 		out.clear();
 		// A section's centre may sit up to half its diagonal (~13.9 blocks) outside the volume and still
-		// reach into it.
-		float reach = radius + 14.0F;
+		// reach into it. The volume is the map's square round its middle; reach counts from the camera, which can
+		// be up to a few blocks from the middle (MIDDLE_STEP_BLOCKS).
+		float lead = Math.max(Math.abs(middleLeadX), Math.abs(middleLeadY));
+		float reach = radius + 14.0F + lead;
 		int sectionRadius = Mth.ceil(reach / 16.0F);
 		int camX = SectionPos.blockToSectionCoord(cam.x);
 		int camZ = SectionPos.blockToSectionCoord(cam.z);
@@ -780,7 +850,7 @@ public final class EtnaShadows {
 					float z = (float) (pos.getZ() + 8 - cam.z);
 					center.set(x, y, z);
 					rotation.transformDirection(center);
-					if (Math.abs(center.x) > reach || Math.abs(center.y) > reach) {
+					if (Math.abs(center.x + middleLeadX) > radius + 14.0F || Math.abs(center.y + middleLeadY) > radius + 14.0F) {
 						continue;
 					}
 					if (viewTest && !CasterView.keeps(x, y, z, center.x, center.y)) {
@@ -895,6 +965,9 @@ public final class EtnaShadows {
 			float lx = r00 * dx + r10 * dy + r20 * dz;
 			float ly = r01 * dx + r11 * dy + r21 * dz;
 			int margin = FLOOR_MARGIN;
+			// From the map's middle rather than the camera.
+			lx += middleLeadX;
+			ly += middleLeadY;
 			if (Math.abs(lx) <= mapEdge && Math.abs(ly) <= mapEdge) {
 				// Read through the map, so filtered there: its texels are largest at its lookup farthest from the
 				// middle of the map, which is its own farthest point pushed out once more (in map units; the
@@ -1115,8 +1188,8 @@ public final class EtnaShadows {
 		private static boolean setMargins(float radius, int size, float softness, float reach) {
 			float texel = 2.0F * radius / size;
 			float edgeTexel = texel / (1.0F - DISTORTION);
-			// The map's middle is snapped to its texel grid, up to a texel's diagonal from the camera.
-			float snap = DIAGONAL * texel;
+			// How far the map's middle is from the camera (it follows the camera in steps, MIDDLE_STEP_BLOCKS).
+			float snap = (float) Math.sqrt(middleLeadX * middleLeadX + middleLeadY * middleLeadY);
 			// In texels: the shadow filter's square (softness texels each way, so the texels it weighs have their
 			// centres up to softness + 0.5 away on each axis) and its push off the surface (1.2 texels); the
 			// light through leaves reads 1.5 texels each way around a point moved towards the light.
@@ -1484,7 +1557,7 @@ public final class EtnaShadows {
 			Std140Builder builder = Std140Builder.onStack(stack, UBO_SIZE)
 				.putMat4f(drawn ? primaryMatrix : NO_MAP)
 				.putVec4(new Vector4f(light.x, light.y, light.z, strength))
-				.putVec4(new Vector4f(1.0F / size, EtnaConfig.shadowDistance, 1.0F / (2.0F * DEPTH_RANGE), EtnaConfig.lightRays.value))
+				.putVec4(new Vector4f(1.0F / size, EtnaConfig.shadowDistance, 1.0F / (2.0F * DEPTH_RANGE), shadowReach(size)))
 				.putVec4(new Vector4f(EtnaConfig.shadowSoftness.value, EtnaConfig.shadowDarknessShown(), EtnaConfig.sunlight.value, EtnaConfig.haze.value))
 				.putVec4(new Vector4f(EtnaConfig.waterReflections.value, EtnaConfig.warmth.value, EtnaFrame.frame() % 4096, drawn ? 1.0F : 0.0F))
 				.putVec4(new Vector4f(faces.down(), faces.up(), 0.5F * (faces.north() + faces.south()), 0.5F * (faces.west() + faces.east())))
@@ -1510,6 +1583,17 @@ public final class EtnaShadows {
 			EtnaWaterSsr.writeTerrain(builder);
 			RenderSystem.getDevice().createCommandEncoder().writeToBuffer(ubo.slice(), builder.get());
 		}
+	}
+
+	/**
+	 * How far round the camera, on each axis, the map always reaches, as a share of its radius (EtnaShadowInfo.w):
+	 * its middle is up to middleLeadMax blocks from the camera. The terrain fades the shadows out towards this
+	 * (etnaMapOut in terrain_shadow.glsl), counted from the camera, so they end at the same distance whichever
+	 * step the middle is at.
+	 */
+	private static float shadowReach(int size) {
+		float radius = Math.max(EtnaConfig.shadowDistance, 1.0F);
+		return Math.max(1.0F - middleLeadMax(radius, size) / radius, 0.5F);
 	}
 
 	/**
