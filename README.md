@@ -121,7 +121,7 @@ No. Etna works on its own; Vesuvio makes the game, and Etna's shadows, faster.
 
 Etna's own code is under the MIT licence, see [LICENSE](LICENSE). Its terrain and cloud shaders are based on
 Minecraft's vanilla shaders (© Mojang AB), which Etna's licence doesn't cover. A few small parts are ported from
-[Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge (temporal anti-aliasing, shadow map
-distortion, the water's Fresnel function) and stay under the Photon Shaders License (`LICENSE-PHOTON.txt`).
+[Photon Shaders](https://github.com/sixthsurge/photon) by SixthSurge (temporal anti-aliasing, the order of
+the light shafts' half-resolution pixels) and stay under the Photon Shaders License (`LICENSE-PHOTON.txt`).
 Complementary Reimagined inspired the look; none of its code is used. Everything taken from other projects and
 every technique Etna follows is listed in [CREDITS.md](CREDITS.md).

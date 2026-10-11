@@ -29,14 +29,17 @@ vec2 etnaFilterAxis(int t, float lo, float hi, float center) {
 }
 
 // One texel of the filter, from its column and its row (etnaFilterAxis): x is the part of it that is
-// lit, y its weight, the share of the texel the square covers. The texel counts as lit unless the map
-// holds something closer to the light there than the receiver plane at the texel's centre, by more
-// than the bias. Both ways of reading the map add up their texels through this.
-vec2 etnaFilterTexel(float stored, vec2 column, vec2 row, float depth, vec2 slope, float bias) {
+// lit, y its weight, the share of the texel the square covers; z is the part of it that is blocked and
+// w that times how far in front of the receiver the blocker lies (in depth units), which the contact
+// hardening below uses to tell how far the shadow has reached from what casts it. The texel counts as
+// blocked when the map holds something closer to the light there than the receiver plane at the
+// texel's centre, by more than the bias. Both ways of reading the map add up their texels through this.
+vec4 etnaFilterTexel(float stored, vec2 column, vec2 row, float depth, vec2 slope, float bias) {
     float w = column.x * row.x;
     // Reversed depth: bigger is closer to the light.
-    float expected = depth + dot(slope, vec2(column.y, row.y));
-    return vec2(stored > expected + bias ? 0.0 : w, w);
+    float front = stored - depth - dot(slope, vec2(column.y, row.y));
+    float blocked = front > bias ? w : 0.0;
+    return vec4(w - blocked, w, blocked, blocked * front);
 }
 
 #ifdef ETNA_SHADOW_GATHER
@@ -45,7 +48,7 @@ vec2 etnaFilterTexel(float stored, vec2 column, vec2 row, float depth, vec2 slop
 // rounding in the texture unit can pick another one. Its components are the block's texels (0, 1),
 // (1, 1), (1, 0) and (0, 0), in that order. The map's sampler clamps to the edge, as the texelFetch
 // loop clamps its indices.
-vec2 etnaFilterGather(sampler2D map, int x, int y, vec2 lo, vec2 hi, vec2 center, float depth, vec2 slope, float bias) {
+vec4 etnaFilterGather(sampler2D map, int x, int y, vec2 lo, vec2 hi, vec2 center, float depth, vec2 slope, float bias) {
     vec4 stored = textureGather(map, vec2(x + 1, y + 1) * max(EtnaShadowInfo.x, 1e-6));
     vec2 column0 = etnaFilterAxis(x, lo.x, hi.x, center.x);
     vec2 column1 = etnaFilterAxis(x + 1, lo.x, hi.x, center.x);
@@ -57,6 +60,82 @@ vec2 etnaFilterGather(sampler2D map, int x, int y, vec2 lo, vec2 hi, vec2 center
         + etnaFilterTexel(stored.y, column1, row1, depth, slope, bias);
 }
 #endif
+
+// ---- Contact hardening ------------------------------------------------------------------------------
+// Real shadows are sharp where they meet what casts them and blur the further they reach from it: the sun
+// is a disc, not a point, so the edge's blur grows with the distance between the caster and the ground.
+// A tree's shadow is crisp at its trunk and a soft smudge at its far end, and a long evening shadow
+// loses its detail and fades out towards its tip. The idea is percentage-closer soft shadows (Randima
+// Fernando, "Percentage-Closer Soft Shadows", NVIDIA, 2005), written here for Etna's map. The box filter
+// below reads the texels round the point anyway; it and SHADOW_SEARCH reads further out find how far in
+// front of the point, towards the light, the casters lie on average. The blur's radius is the shadow
+// softness setting plus SHADOW_SPREAD of that distance, times how far the setting lies above its lowest
+// (0.25: hard shadow edges stay hard, and skip all of this). The near part of a shadow keeps the exact
+// area-weighted box filter, the wide part reads SHADOW_DISK points spread over a disc of that radius, and
+// the two blend where the blur widens.
+//
+// Every read is the bilinear blend of the four texels round it, and the search's reads sit at the same
+// place round the point in every frame, so how wide the blur is only changes when the point, the sun or
+// the casters move, and then smoothly. So does the disc while it is narrow. A disc wider than about
+// eight texels has gaps between its reads that the edge shows through as faint copies of itself; it is
+// turned from pixel to pixel and frame to frame (etnaDither), by more the wider it is, and the anti-
+// aliasing averages the turns into a smooth blur. 0.8.1's first version turned every read, the search's
+// too, and gave up where its few reads found nothing in the way: the anti-aliasing could not settle
+// that, and penumbras shimmered.
+
+// Blocks of blur radius per block between the caster and the ground, per unit of shadow softness above
+// its lowest: at the default 1.3 about five times the real sun's, which looks right at Minecraft's scale.
+const float SHADOW_SPREAD = 0.025;
+// The widest blur, in blocks and in texels of the map: the casters are looked for this far round the
+// point. The wider the disc in texels, the more of its smoothness rests on the anti-aliasing. At the
+// default map size and distance a texel near the camera is about a sixtieth of a block, so the blur
+// there still reaches a quarter of a block; from about 35 blocks out the 1.2 blocks set the limit.
+const float SHADOW_SPREAD_BLOCKS = 1.2;
+const float SHADOW_SPREAD_TEXELS = 16.0;
+// Where the reads lie, as fractions of the search radius and of the blur's radius. Both sets are point
+// symmetric (each read has its opposite), so a receiver plane that is a little off cancels out. The search
+// covers the ring beyond the box filter; the disc's sixteen points sit on eight rings of equal area.
+const int SHADOW_SEARCH = 6;
+const vec2 SHADOW_SEARCH_TAPS[6] = vec2[6](
+    vec2(0.5401, 0.0000), vec2(0.0663, -0.7554), vec2(-0.9123, -0.1614),
+    vec2(-0.5401, 0.0000), vec2(-0.0663, 0.7554), vec2(0.9123, 0.1614));
+const int SHADOW_DISK = 16;
+const vec2 SHADOW_DISK_TAPS[16] = vec2[16](
+    vec2(0.2500, 0.0000), vec2(-0.3193, 0.2925), vec2(0.0489, -0.5569), vec2(0.4024, 0.5249),
+    vec2(-0.7385, -0.1306), vec2(0.6996, -0.4450), vec2(-0.2340, 0.8705), vec2(-0.4463, -0.8593),
+    vec2(-0.2500, -0.0000), vec2(0.3193, -0.2925), vec2(-0.0489, 0.5569), vec2(-0.4024, -0.5249),
+    vec2(0.7385, 0.1306), vec2(-0.6996, 0.4450), vec2(0.2340, -0.8705), vec2(0.4463, 0.8593));
+
+// The 2x2 texels round corner `corner` of the map (in texels; texel i spans i .. i + 1), in
+// textureGather's order: (-1, 0), (0, 0), (0, -1) and (-1, -1) from the corner.
+vec4 etnaShadowQuad(sampler2D map, vec2 corner) {
+    #ifdef ETNA_SHADOW_GATHER
+    return textureGather(map, corner * max(EtnaShadowInfo.x, 1e-6));
+    #else
+    ivec2 c = ivec2(corner);
+    ivec2 last = textureSize(map, 0) - 1;
+    return vec4(texelFetch(map, clamp(c + ivec2(-1, 0), ivec2(0), last), 0).r,
+        texelFetch(map, clamp(c, ivec2(0), last), 0).r,
+        texelFetch(map, clamp(c + ivec2(0, -1), ivec2(0), last), 0).r,
+        texelFetch(map, clamp(c - 1, ivec2(0), last), 0).r);
+    #endif
+}
+
+// One read of the search or the disc at `q` (in texels), the bilinear blend of the four texels round it,
+// each compared with the receiver plane (depth at `center`, changing by `slope` per texel) at its own
+// centre: as etnaFilterTexel, x the lit share, y the weight (1), z the blocked share and w that times how
+// far in front the blockers lie.
+vec4 etnaShadowTap(sampler2D map, vec2 q, vec2 center, float depth, vec2 slope, float bias) {
+    vec2 corner = floor(q - 0.5) + 1.0;
+    vec2 f = q - (corner - 0.5);
+    float here = depth + dot(slope, corner - center);
+    vec4 plane = here + vec4(dot(slope, vec2(-0.5, 0.5)), dot(slope, vec2(0.5, 0.5)), dot(slope, vec2(0.5, -0.5)), dot(slope, vec2(-0.5, -0.5)));
+    // Reversed depth: bigger is closer to the light.
+    vec4 front = etnaShadowQuad(map, corner) - plane;
+    vec4 blocked = step(vec4(bias), front) * vec4((1.0 - f.x) * f.y, f.x * f.y, f.x * (1.0 - f.y), (1.0 - f.x) * (1.0 - f.y));
+    float share = dot(blocked, vec4(1.0));
+    return vec4(1.0 - share, 1.0, share, dot(blocked, front));
+}
 
 // shadowVisibility on one of the two maps (`map`, drawn through `shadowMat`).
 float etnaShadowFilter(sampler2D map, mat4 shadowMat, vec3 normal, bool thin) {
@@ -80,6 +159,12 @@ float etnaShadowFilter(sampler2D map, mat4 shadowMat, vec3 normal, bool thin) {
     #else
     float depth = ndc.z * 0.5 + 0.5;
     #endif
+    // Beyond the far end of the map's depth range (more than DEPTH_RANGE blocks below the camera along
+    // the light: far away under a low sun, or the ground seen from high up) the cleared map holds nothing,
+    // and nothing there can be told to be in shadow.
+    if (depth <= 0.0) {
+        return 1.0;
+    }
     float size = 1.0 / max(EtnaShadowInfo.x, 1e-6);
     // Receiver plane: how the surface's own depth in the map changes per texel across the filter.
     // A surface the sun grazes climbs towards the light within a few texels; compared against one
@@ -118,24 +203,24 @@ float etnaShadowFilter(sampler2D map, mat4 shadowMat, vec3 normal, bool thin) {
     vec2 lo = center - softness;
     vec2 hi = center + softness;
     ivec2 first = ivec2(floor(lo));
-    vec2 sum = vec2(0.0);
+    vec4 box = vec4(0.0);
     #ifdef ETNA_SHADOW_GATHER
     // The square overlaps at most 2 texels a side up to softness 0.5, 4 up to 1.5, 6 up to 2.5, 8 up to
     // 3.5 and 9 up to 4, the most the menu allows. So one gather, or blocks of 2x2 to 5x5 gathers from
     // `first`, hold every texel the loop below gives any weight, and the ones past the square's edge
     // weigh nothing. The softness is the same for every pixel, so they all take the same branch.
     if (softness <= 0.5) {
-        sum = etnaFilterGather(map, first.x, first.y, lo, hi, center, depth, slopePerTexel, bias);
+        box = etnaFilterGather(map, first.x, first.y, lo, hi, center, depth, slopePerTexel, bias);
     } else if (softness <= 1.5) {
         for (int y = 0; y < 4; y += 2) {
             for (int x = 0; x < 4; x += 2) {
-                sum += etnaFilterGather(map, first.x + x, first.y + y, lo, hi, center, depth, slopePerTexel, bias);
+                box += etnaFilterGather(map, first.x + x, first.y + y, lo, hi, center, depth, slopePerTexel, bias);
             }
         }
     } else if (softness <= 2.5) {
         for (int y = 0; y < 6; y += 2) {
             for (int x = 0; x < 6; x += 2) {
-                sum += etnaFilterGather(map, first.x + x, first.y + y, lo, hi, center, depth, slopePerTexel, bias);
+                box += etnaFilterGather(map, first.x + x, first.y + y, lo, hi, center, depth, slopePerTexel, bias);
             }
         }
     } else {
@@ -148,7 +233,7 @@ float etnaShadowFilter(sampler2D map, mat4 shadowMat, vec3 normal, bool thin) {
         vec2 capped = min(hi, vec2(first + 9));
         for (int y = 0; y < span; y += 2) {
             for (int x = 0; x < span; x += 2) {
-                sum += etnaFilterGather(map, first.x + x, first.y + y, lo, capped, center, depth, slopePerTexel, bias);
+                box += etnaFilterGather(map, first.x + x, first.y + y, lo, capped, center, depth, slopePerTexel, bias);
             }
         }
     }
@@ -158,13 +243,63 @@ float etnaShadowFilter(sampler2D map, mat4 shadowMat, vec3 normal, bool thin) {
         vec2 row = etnaFilterAxis(y, lo.y, hi.y, center.y);
         for (int x = first.x; x <= last.x; x++) {
             float stored = texelFetch(map, clamp(ivec2(x, y), ivec2(0), ivec2(size) - 1), 0).r;
-            sum += etnaFilterTexel(stored, etnaFilterAxis(x, lo.x, hi.x, center.x), row, depth, slopePerTexel, bias);
+            box += etnaFilterTexel(stored, etnaFilterAxis(x, lo.x, hi.x, center.x), row, depth, slopePerTexel, bias);
         }
     }
     #endif
-    float lit = sum.x / max(sum.y, 1e-4);
+    float lit = box.x / max(box.y, 1e-4);
+    // Contact hardening: how far the casters lie from here sets how wide the blur is.
+    float spread = SHADOW_SPREAD * (softness - 0.25);
+    if (spread > 0.0) {
+        float search = clamp(SHADOW_SPREAD_BLOCKS / texelBlocks, softness + 1.0, SHADOW_SPREAD_TEXELS);
+        vec4 found = box;
+        for (int i = 0; i < SHADOW_SEARCH; i++) {
+            found += etnaShadowTap(map, center + SHADOW_SEARCH_TAPS[i] * search, center, depth, slopePerTexel, bias);
+        }
+        // Everything read is in the way (deep inside a shadow) or nothing is (in the open): the disc
+        // would find the same, so it is only read where the two meet.
+        if (found.z > 0.0 && found.x > 0.0) {
+            float apart = found.w / (found.z * max(EtnaShadowInfo.z, 1e-6));
+            float radius = min(softness + spread * apart / texelBlocks, search);
+            // A blocker only grazed by the reads (or a gap only grazed, deep in a shadow) widens the blur
+            // only that much, so the disc fades in where it starts being read.
+            float wide = smoothstep(softness + 0.5, softness + 1.5, radius) * smoothstep(0.0, 0.5, min(found.x, found.z));
+            if (wide > 0.0) {
+                // The disc is point symmetric, so half a turn covers every way it can lie.
+                float angle = etnaDither() * 3.14159265 * smoothstep(4.0, 8.0, radius);
+                mat2 turn = mat2(cos(angle), sin(angle), -sin(angle), cos(angle)) * radius;
+                float disk = 0.0;
+                for (int i = 0; i < SHADOW_DISK; i++) {
+                    disk += etnaShadowTap(map, center + turn * SHADOW_DISK_TAPS[i], center, depth, slopePerTexel, bias).x;
+                }
+                lit = mix(lit, disk / float(SHADOW_DISK), wide);
+            }
+        }
+    }
     // Fade out towards the edge of the area the map covers.
     return mix(lit, 1.0, smoothstep(0.85, 1.0, edge));
+}
+
+// A low sun casts long shadows, and the sky, which it no longer outshines, fills them in: below about 20
+// degrees shadows fade, towards LOW_SUN_FILL lighter as the sun (or the moon) meets the horizon. Before
+// 0.8.1 they kept their full darkness from 10 degrees up, at three to six times the length of what cast
+// them.
+const float LOW_SUN_FILL = 0.35;
+
+float etnaLowSunFill() {
+    return LOW_SUN_FILL * (1.0 - smoothstep(0.05, 0.35, ETNA_LIGHT_DIR.y));
+}
+
+// The shadow pass draws its casters from whole chunk columns round the camera (EtnaShadows.collectCasters):
+// the shadow distance plus 14 blocks, rounded up to whole 16-block sections, along world x and z, so at
+// least that far from the camera on every side. Under a sun below about 60 degrees the map reaches
+// further than that towards and away from the sun, where nothing was drawn into it, and shadows stopped
+// at a straight line there. They fade out before it instead. How much of the way to lit, for a
+// camera-relative position.
+float etnaCasterFade(vec3 position) {
+    float reach = 16.0 * ceil((EtnaShadowInfo.y + 14.0) / 16.0);
+    float away = max(abs(position.x), abs(position.z));
+    return smoothstep(reach - 24.0, reach - 4.0, away);
 }
 
 // 1 where the sun reaches this fragment, 0 where something closer to the sun blocks it. The map holds
@@ -178,7 +313,7 @@ float shadowVisibility(vec3 normal, bool thin) {
     if (EtnaShadowFade.x > 0.0) {
         lit = mix(lit, etnaShadowFilter(EtnaShadowSampler2, EtnaShadowMat2, normal, thin), EtnaShadowFade.x);
     }
-    return lit;
+    return mix(lit, 1.0, max(etnaLowSunFill(), etnaCasterFade(etnaViewPos)));
 }
 
 // shadowSpace for a point already in the map's clip space (EtnaShadowMat applied; the projection is
@@ -205,7 +340,7 @@ vec4 shadowSpace(vec3 position) {
 // The unfiltered test in `map` for a point from shadowSpace (or the same for the second map): 1 lit, 0 in
 // shadow.
 float etnaShadowTest(sampler2D map, vec4 point) {
-    if (point.w >= 1.0) {
+    if (point.w >= 1.0 || point.z <= 0.0) {
         return 1.0;
     }
     float stored = texture(map, point.xy).r;
@@ -227,7 +362,7 @@ float shadowAt(vec3 position) {
     if (EtnaShadowFade.x > 0.0) {
         lit = mix(lit, etnaShadowTest2(position), EtnaShadowFade.x);
     }
-    return lit;
+    return mix(lit, 1.0, etnaCasterFade(position));
 }
 
 // shadowAt for one of many jittered samples that are averaged (the light shafts under water): it reads
@@ -257,6 +392,9 @@ float etnaLeafThrough(sampler2D map, mat4 shadowMat) {
     #else
     float depth = ndc.z * 0.5 + 0.5;
     #endif
+    if (depth <= 0.0) {
+        return 1.0;
+    }
     float size = 1.0 / max(EtnaShadowInfo.x, 1e-6);
     vec2 center = (ndc.xy / etnaShadowFactor(ndc.xy) * 0.5 + 0.5) * size;
     vec2 lo = center - 1.0;

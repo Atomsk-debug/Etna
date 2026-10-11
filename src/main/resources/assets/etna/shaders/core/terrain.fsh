@@ -134,6 +134,10 @@ vec3 etnaWaterSky(vec3 dir) {
 float etnaPixelFootprint = 0.0;
 // How many of the atlas's texels one screen pixel spans, from texCoord0's derivatives, set with it.
 float etnaTexelFootprint = 0.0;
+// Whether a water face lies flat, within about 4 degrees, from etnaViewPos's derivatives before
+// geometricNormal snaps them onto an axis: still water's top does, water flowing down a slope (a block's
+// corners a level of water apart, 6 degrees or more) doesn't. Set in main for water.
+bool etnaWaterLevel = false;
 
 #ifdef IMPROVED_FOG
 vec3 sampleBackgroundColor(ivec2 pixelCoords) {
@@ -832,6 +836,7 @@ void main() {
         // falling column, tilted towards x or z, still get an average.
         vec3 faceNormal = abs(cross(posDx, posDy));
         vec3 inBlock = fract(etnaViewPos - CameraOffset);
+        etnaWaterLevel = faceNormal.y * faceNormal.y > 0.995 * dot(faceNormal, faceNormal);
         if (faceNormal.y >= max(faceNormal.x, faceNormal.z)) {
             if (faceNormal.y > 1e-3 * length(posDx.xz) * length(posDy.xz)) {
                 color = etnaWaterTexture(uvDxPicture, uvDyPicture, posDx, posDy);

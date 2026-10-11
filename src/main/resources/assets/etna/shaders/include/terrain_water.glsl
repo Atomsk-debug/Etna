@@ -441,22 +441,23 @@ vec3 etnaUnjitter() {
 // Only the classic translucent pass blends what this writes into alpha. With improved transparency the
 // water is drawn without Etna's block and keeps its look from before.
 
-// Fresnel reflectance at the boundary between two clear media. n: the index of refraction of the far
-// side over that of the near side (1 / 1.333 looking from the water up into the air). Returns 1 past
-// the critical angle: total internal reflection.
-// Ported from Photon Shaders by SixthSurge (include/lighting/bsdf.glsl, fresnel_dielectric_n), Photon
-// Shaders License, see CREDITS.md and LICENSE-PHOTON.txt.
+// Fresnel reflectance of a smooth boundary between two clear media, for unpolarised light: the average of
+// Fresnel's equations for the two polarisations, in the form Cook and Torrance give ("A Reflectance Model
+// for Computer Graphics", 1982; also Walter et al., "Microfacet Models for Refraction through Rough
+// Surfaces", 2007, eq. 22). cosTheta: the cosine between the ray and the surface's normal; n: the index of
+// refraction of the far side over that of the near side (1 / 1.333 looking from the water up into the
+// air). Where g^2 = n^2 - 1 + cos^2 falls below 0 no ray leaves (past the critical angle): total internal
+// reflection, 1.
 float fresnelDielectric(float cosTheta, float n) {
-    float gSq = n * n + cosTheta * cosTheta - 1.0;
-    if (gSq < 0.0) {
+    float c = min(abs(cosTheta), 1.0);
+    float g2 = n * n - 1.0 + c * c;
+    if (g2 <= 0.0) {
         return 1.0;
     }
-    float g = sqrt(gSq);
-    float a = g - cosTheta;
-    float b = g + cosTheta;
-    float x = (b * cosTheta - 1.0) / max(a * cosTheta + 1.0, 1e-4);
-    float ab = a / max(b, 1e-6);
-    return clamp(0.5 * ab * ab * (1.0 + x * x), 0.0, 1.0);
+    float g = sqrt(g2);
+    float a = (g - c) / max(g + c, 1e-6);
+    float b = (c * (g + c) - 1.0) / max(c * (g - c) + 1.0, 1e-6);
+    return clamp(0.5 * a * a * (1.0 + b * b), 0.0, 1.0);
 }
 
 // A colour and alpha for the translucent blend, which can't take a colour above 1: alpha grows (the
@@ -552,31 +553,35 @@ float waterThickness(vec3 surfacePos, out float known) {
 }
 
 // ---- Shoreline foam -----------------------------------------------------------------------------------
-// A thin, soft line of foam where the water meets the shore, and a little over a floor just under the
-// surface. Minecraft's shores run along the edges of blocks, so the line is measured from those edges:
-// the shadow map, which holds opaque terrain only, says which of the eight blocks around this one are
-// land, from one read at each block's middle on the water's plane, and the line follows the nearest land
-// block's edge exactly, however far away and whatever the map's resolution. Smooth noise fixed in the
-// world wobbles its edge, breaks it into patches and drifts slowly round, and the line breathes a little
-// as if the water lapped at the shore. It is lit like a white top face in the same place (sun, shade, sky,
-// torches). The map can't tell a block of land from water lying in that block's shade, so where the light
-// comes from behind a neighbouring block, only land standing barely above the water (a beach, where shade
-// can't reach that far) counts: banks get their foam on the side the light comes from. Without the map
-// (shadows off, dusk, rain) there is none.
+// A thin, faint, broken line of foam where still water meets the shore. Minecraft's shores run along the
+// edges of blocks, so the line is measured from those edges: the shadow map, which holds opaque terrain
+// only, says which of the eight blocks around this one are land, from one read at each block's middle on
+// the water's plane, and the line follows the nearest land block's edge exactly, however far away and
+// whatever the map's resolution. Smooth noise fixed in the world wobbles its edge, breaks it into patches
+// and drifts slowly round, fine bubbles open it up close by, and the line breathes a little as if the
+// water lapped at the shore. It is lit like a pale top face in the same place (sun, shade, sky, torches),
+// never brighter than the sand beside it. The map can't tell a block of land from water lying in that
+// block's shade, so where the light comes from behind a neighbouring block, only land standing barely
+// above the water (a beach, where shade can't reach that far) counts: banks get their foam on the side the
+// light comes from. Without the map (shadows off, dusk, rain) there is none. 0.8.0 also foamed every floor
+// lying just under the surface, which turned thin sheets of flowing water down a bank into blotches and
+// shallow water into a milky haze: shallow water now stays clear, and water flowing down a slope has no
+// foam.
 
 // Width of the line, in blocks, before the noise wobbles it.
-const float FOAM_WIDTH = 0.3;
+const float FOAM_WIDTH = 0.2;
 // How much of the water the line covers where it is thickest, at the setting's full strength.
-const float FOAM_OPACITY = 0.85;
+const float FOAM_OPACITY = 0.7;
 // Land counts only up to this height above the water's plane (along the light, as the map measures it):
 // higher, it is more likely the shade of a tree or a cliff top than a shore.
 const float FOAM_BANK = 1.3;
 // Land behind the block, as the light sees it, counts only up to this height: a beach's top.
 const float FOAM_BEACH = 0.2;
-// Water shallower than this over its floor, in blocks, foams too.
-const float FOAM_SHALLOW = 0.3;
-// The foam's own colour: white with a breath of blue.
-const vec3 FOAM_ALBEDO = vec3(0.80, 0.85, 0.88);
+// The foam's own colour: a pale grey-white with a breath of blue, so in full sun it reads as foam and
+// doesn't glow.
+const vec3 FOAM_ALBEDO = vec3(0.66, 0.70, 0.72);
+// Bubbles per block, along each axis.
+const float FOAM_BUBBLES = 6.0;
 
 // Smooth value noise, 0 .. 1, on a lattice of one block: fixed in the world, no detail finer than a block.
 float foamNoise(vec2 p) {
@@ -592,8 +597,8 @@ float foamNoise(vec2 p) {
 }
 
 // How strongly foam covers the water surface at world xz p and time t (seconds), 0 .. 1, before the
-// setting. vertical: blocks of water under the surface, depthKnown how far that can be trusted.
-float shoreFoam(vec2 p, float t, float vertical, float depthKnown) {
+// setting.
+float shoreFoam(vec2 p, float t) {
     if (EtnaWaterSsr.x <= 0.0 || EtnaLook2.w < 0.5) {
         return 0.0;
     }
@@ -640,15 +645,18 @@ float shoreFoam(vec2 p, float t, float vertical, float depthKnown) {
     float turn2 = t * (6.2831853 / 75.0);
     float wobble = foamNoise(p * 1.6 + 0.6 * vec2(cos(turn), sin(turn))) - 0.5;
     float patches = smoothstep(0.25, 0.7, foamNoise(p * 3.1 + vec2(17.3, 5.1) + 0.4 * vec2(sin(turn2), cos(turn2))));
+    // Bubbles, merging into their average where a pixel spans several of them, so far away they never
+    // crawl.
+    float bubbles = smoothstep(0.3, 0.65, foamNoise(p * FOAM_BUBBLES + vec2(3.7, 11.9) + 0.5 * vec2(cos(turn2), sin(turn))));
+    bubbles = mix(bubbles, 0.5, smoothstep(0.25, 1.0, etnaPixelFootprint * FOAM_BUBBLES));
     // The water lapping at the shore: the line breathes every 8 seconds, at its own moment along the shore.
     float lap = 0.85 + 0.15 * etnaSin(t * (6.2831853 / 8.0) + 6.0 * wobble);
     // Never thinner than a pixel and a half: wider and fainter instead, so it never breaks up into crawling dots.
     float width = FOAM_WIDTH * lap;
     float shown = max(width, 1.5 * etnaPixelFootprint);
-    float line = (1.0 - smoothstep(0.0, shown, nearest + 0.12 * wobble)) * (width / shown);
-    float shallow = (1.0 - smoothstep(0.05, FOAM_SHALLOW, vertical)) * depthKnown * 0.6;
+    float line = (1.0 - smoothstep(0.0, shown, nearest + 0.08 * wobble)) * (width / shown);
     float edge = 1.0 - smoothstep(0.85, 1.0, here.w);
-    return max(line, shallow) * (0.45 + 0.55 * patches) * edge;
+    return line * (0.2 + 0.8 * patches) * (0.35 + 0.65 * bubbles) * edge;
 }
 
 // The light on foam at this point: what a white top face here would get (shadeTerrain's light for it).
@@ -664,13 +672,14 @@ vec3 foamLight() {
 // the shore. vanillaAlpha: the water texture's alpha; lit: the surface as shadeTerrain lit it, whose
 // brightness (shade of trees and cliffs, time of day) the water's body takes, with the hue of the water's
 // own tint. fresnel and reflection: the sky's reflection, glint: the sun's, with the glitter. p and t:
-// where (world xz) and when the foam is worked out. The blend then gives
+// where (world xz) and when the foam is worked out; level: whether the surface lies flat (no foam on water
+// flowing down a slope). The blend then gives
 // behind * (1 - a)(1 - F) + body * (1 - T)(1 - F) + reflection * F + glint, with T what the water lets
 // through on the way to the bottom and back up to the eye, and a its average. Where the depth is unknown
 // the body is the lit texture's colour and a its alpha: the look water had before it had depth, with what
 // it mirrors taken out of what it lets through, so the sky's reflection is always exactly reflection * F
 // (the water reflections pass, post/water_ssr.fsh, takes that out again where it finds the world instead).
-vec4 waterFromAbove(float vanillaAlpha, vec3 lit, vec3 viewDir, vec3 reflection, float fresnel, vec3 glint, vec2 p, float t) {
+vec4 waterFromAbove(float vanillaAlpha, vec3 lit, vec3 viewDir, vec3 reflection, float fresnel, vec3 glint, vec2 p, float t, bool level) {
     float plainAlpha = 1.0 - (1.0 - vanillaAlpha) * (1.0 - fresnel);
     vec4 surface = etnaFitAlpha((lit * (vanillaAlpha * (1.0 - fresnel)) + reflection * fresnel + glint) / max(plainAlpha, 0.05), plainAlpha);
     float known;
@@ -690,7 +699,7 @@ vec4 waterFromAbove(float vanillaAlpha, vec3 lit, vec3 viewDir, vec3 reflection,
         covered = mix(covered, deep.rgb * deep.a, known);
         outAlpha = mix(outAlpha, deep.a, known);
     }
-    float foam = shoreFoam(p, t, vertical, known) * EtnaWaterSsr.x * FOAM_OPACITY;
+    float foam = level ? shoreFoam(p, t) * EtnaWaterSsr.x * FOAM_OPACITY : 0.0;
     if (foam > 0.003) {
         // A layer over the water, which covers what the water shows by its own share.
         covered = mix(covered, FOAM_ALBEDO * foamLight(), foam);
@@ -917,7 +926,7 @@ vec4 shadeWater(vec4 color, vec3 normal) {
     vec3 glint = sunColor() * sun;
     #if defined(ETNA_SHADOWS) && defined(ETNA_TRANSLUCENT_LAYER)
     if (normal.y > 0.8 && cameraInAir() > 0.5) {
-        return waterFromAbove(color.a, color.rgb, viewDir, skyReflection, fresnel * ETNA_WATER_REFLECTIONS, glint, p, t);
+        return waterFromAbove(color.a, color.rgb, viewDir, skyReflection, fresnel * ETNA_WATER_REFLECTIONS, glint, p, t, etnaWaterLevel);
     }
     #endif
     return vec4(mix(color.rgb, skyReflection, fresnel * ETNA_WATER_REFLECTIONS) + glint, color.a);
