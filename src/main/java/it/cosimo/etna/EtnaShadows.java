@@ -266,6 +266,13 @@ public final class EtnaShadows {
 	 */
 	private static int primary;
 	private static float secondaryWeight;
+	/**
+	 * Set by the benchmark (EtnaBenchmark owns it and puts it back): while true, chooseMap keeps a fade running,
+	 * held at its middle, along the held direction. Both maps are drawn in turn and every sunlit pixel reads both,
+	 * as in a real fade, so the benchmark can measure what the fades cost while the sun moves: it holds the sun,
+	 * so no real fade happens during a run.
+	 */
+	public static boolean benchmarkFade;
 	private static final Matrix4f primaryMatrix = new Matrix4f();
 	private static final Matrix4f secondaryMatrix = new Matrix4f();
 	/**
@@ -534,8 +541,19 @@ public final class EtnaShadows {
 			drawSlack = 0.0F;
 			return base;
 		}
+		if (benchmarkFade && !fading) {
+			// A fade to the direction already held, started as a real one is (the held map drawn once more).
+			targetDir.set(baseDir);
+			fading = true;
+			fade = 0.0F;
+			mapDrawn[other] = false;
+			drawSlack = FADE_SLACK;
+			return base;
+		}
 		if (fading) {
-			fade += dt / fadeSeconds;
+			// The benchmark's fade stays at its start until the other map is drawn (as a real one does in its
+			// first frame), then at its middle, where both maps count the same.
+			fade = benchmarkFade ? (mapDrawn[other] ? 0.5F : 0.0F) : fade + dt / fadeSeconds;
 			// The map drawn last frame is read again this frame: unless it still covers the view, and the old
 			// map still counts (MIN_MIX), the fade ends here.
 			if (fade < 1.0F && smoothstep(0.0F, 1.0F, fade) < 1.0F - MIN_MIX && covers(lastDrawn)) {
