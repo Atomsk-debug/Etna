@@ -216,6 +216,19 @@ public final class EtnaConfig {
 	public static float sunPathTilt = SUN_PATH_TILT_DEFAULT;
 	/** macOS: open the window without Retina pixel density, so the game draws a quarter of the pixels. */
 	public static boolean halfResolution = false;
+	/**
+	 * How wide and tall the world is drawn, as a share of the screen (EtnaScale): below 1 the level is drawn at fewer
+	 * pixels and Etna's anti-aliasing builds the full-size picture from it over several frames. Only with
+	 * anti-aliasing on; the hand and the HUD always stay at full size.
+	 */
+	public static float renderScale = 1.0F;
+	public static final float RENDER_SCALE_MIN = 0.5F;
+	/**
+	 * Auto Resolution (General page): the frame rate EtnaAutoScale holds by lowering the world's resolution, down to
+	 * renderScale (70% when that is 1); 0 is off. One of AUTO_RESOLUTION_FPS.
+	 */
+	public static int autoResolutionFps = 0;
+	public static final int[] AUTO_RESOLUTION_FPS = {0, 60, 90, 120, 144, 165};
 	/** The performance log: a line in latest.log every few seconds while in a world. */
 	public static Profiling profiling = Profiling.OFF;
 	/** Skip shadow casters that can't shadow anything on screen. Only in the file, to compare with and without. */
@@ -225,6 +238,11 @@ public final class EtnaConfig {
 	 * texel at a time as before 0.6.0 (same picture, slower), in case a graphics driver gets the gather wrong.
 	 */
 	public static boolean shadowGather = true;
+	/**
+	 * Entity Lighting (Lighting page): mobs, block entities, armour, items and the hand lit like the terrain (EtnaEntities);
+	 * off keeps vanilla's light on them. Not part of the Look or the Quality.
+	 */
+	public static boolean entityLighting = true;
 
 	// 0.8.0 SKY
 	/** The night sky's stars (EtnaSky): none, stars, stars with the Milky Way, or the Milky Way with nebula colours. */
@@ -395,6 +413,11 @@ public final class EtnaConfig {
 			return;
 		}
 		halfResolution = bool(props, "halfResolution", false);
+		renderScale = number(props, "renderScale", 1.0F, RENDER_SCALE_MIN, 1.0F);
+		autoResolutionFps = (int) number(props, "autoResolutionFps", 0, 0, 1000);
+		if (autoResolutionFps > 0 && autoResolutionFps < 30) {
+			autoResolutionFps = 30;
+		}
 		sunPathTilt = number(props, "sunPathTilt", SUN_PATH_TILT_DEFAULT, 0.0F, 45.0F);
 		visibility.set(number(props, "visibility", VISIBILITY_DEFAULT, visibility.min, visibility.max));
 		// 0.8.0 MOOD
@@ -415,6 +438,7 @@ public final class EtnaConfig {
 		profiling = choice(props, "profiling", Profiling.OFF);
 		shadowCulling = bool(props, "shadowCulling", true);
 		shadowGather = bool(props, "shadowGather", true);
+		entityLighting = bool(props, "entityLighting", true);
 		// 0.8.0 MOTES
 		fireflies = choice(props, "fireflies", Fireflies.NORMAL);
 		applyQuality(choice(props, "quality", Quality.HIGH));
@@ -453,6 +477,8 @@ public final class EtnaConfig {
 		props.setProperty("enabled", Boolean.toString(enabled));
 		props.setProperty("toggleKey", Integer.toString(toggleKey));
 		props.setProperty("halfResolution", Boolean.toString(halfResolution));
+		props.setProperty("renderScale", Float.toString(renderScale));
+		props.setProperty("autoResolutionFps", Integer.toString(autoResolutionFps));
 		props.setProperty("sunPathTilt", Float.toString(sunPathTilt));
 		props.setProperty("visibility", Float.toString(visibility.value));
 		// 0.8.0 MOOD
@@ -472,6 +498,7 @@ public final class EtnaConfig {
 		props.setProperty("profiling", profiling.name().toLowerCase(Locale.ROOT));
 		props.setProperty("shadowCulling", Boolean.toString(shadowCulling));
 		props.setProperty("shadowGather", Boolean.toString(shadowGather));
+		props.setProperty("entityLighting", Boolean.toString(entityLighting));
 		// 0.8.0 MOTES
 		props.setProperty("fireflies", fireflies.name().toLowerCase(Locale.ROOT));
 		props.setProperty("quality", quality.name().toLowerCase(Locale.ROOT));
@@ -497,12 +524,15 @@ public final class EtnaConfig {
 				+ " shadowDistance and antiAliasing are only read back with quality=custom). profile: natural | soft | vivid"
 				+ " | cinematic | custom (the look values are only read back with profile=custom; eyeAdaptation: 0 (off) .. 1)."
 				+ " toggleKey: key code, F7 by"
-				+ " default. halfResolution: macOS only, applies after a restart. sunPathTilt: 0 to 45, how many degrees the"
+				+ " default. halfResolution: macOS only, applies after a restart. renderScale: 0.5 .. 1, the share of the screen's"
+				+ " width and height the world is drawn at (with anti-aliasing on; 1: full size). autoResolutionFps: 0 (off) or"
+				+ " the frame rate to hold by lowering the world's resolution, down to renderScale (0.7 when renderScale is 1). sunPathTilt: 0 to 45, how many degrees the"
 				+ " path of the sun and the moon leans to the south (0 is vanilla's path). visibility: 0 .. 1, how much better caves,"
 				+ " nights and shade read (0: as in 0.7.0), kept whatever the profile. profiling: off | summary (a performance line in"
 				+ " latest.log every few seconds). shadowCulling: true | false (false draws every shadow caster, to compare)."
 				+ " shadowGather: true | false (false reads the shadow map one texel at a time, as before 0.6.0; applies after"
-				+ " a restart). cloudShadows: 0 .. 1, how much a cloud overhead dims the sun on the land (0: no cloud shadows)."
+				+ " a restart). entityLighting: true | false (false keeps vanilla's light on mobs, chests, items and the hand)."
+				+ " cloudShadows: 0 .. 1, how much a cloud overhead dims the sun on the land (0: no cloud shadows)."
 				+ " mist: 0 .. 1, ground and valley mist, night and rain haze, cave murk (0: off). mood: natural | clear_day | trailer"
 				+ " | storybook | old_kingdom | ink | lifelike | enchanted | mystic | autumn | pastel, kept whatever the profile."
 				+ " moodStrength: 0 .. 1 (0: the look alone). fireflies: off | few | normal"

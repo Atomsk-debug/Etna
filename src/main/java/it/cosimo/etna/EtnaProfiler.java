@@ -119,8 +119,17 @@ public final class EtnaProfiler {
 				logStarted = false;
 				headerDue = true;
 			}
-			// Gives the GPU timer's queries back once the frames still using them are done.
-			EtnaGpuTimer.collect(false);
+			// Auto Resolution steers by the GPU's time: one frame in EVERY is timed for it, as for the log.
+			boolean auto = EtnaAutoScale.wantsTiming();
+			if (auto) {
+				frameNumber++;
+				EtnaAutoScale.frameStarted(frameNumber);
+			}
+			// Without it, gives the GPU timer's queries back once the frames still using them are done.
+			EtnaGpuTimer.collect(auto);
+			if (auto && frameNumber % EtnaGpuTimer.EVERY == 0) {
+				EtnaGpuTimer.beginFrame(frameNumber, Minecraft.getInstance().gameRenderer.gameRenderState().shouldRenderLevel);
+			}
 			return;
 		}
 		try {
@@ -138,6 +147,7 @@ public final class EtnaProfiler {
 			}
 			timing = true;
 			frameNumber++;
+			EtnaAutoScale.frameStarted(frameNumber);
 			startInterval(now);
 			// GPU times of earlier frames that have come back, booked before the log or a step closes its window.
 			EtnaGpuTimer.collect(true);
@@ -360,6 +370,10 @@ public final class EtnaProfiler {
 	 * benchmark step being measured; each keeps it only if the frame started inside its window.
 	 */
 	static void gpuFrame(long frame, long[] passNs, long totalNs) {
+		if (!timing) {
+			// Timed for Auto Resolution alone, with the log off.
+			return;
+		}
 		log.addGpu(frame, passNs, totalNs);
 		Stats bench = EtnaBenchmark.measuring();
 		if (bench != null) {
@@ -485,7 +499,9 @@ public final class EtnaProfiler {
 		String shadows = EtnaConfig.shadows
 			? "shadows " + EtnaConfig.shadowResolution + "/" + Math.round(EtnaConfig.shadowDistance)
 			: "shadows off";
-		return title(EtnaConfig.quality) + " " + shadows + ", AA " + (EtnaConfig.antiAliasing ? "on" : "off") + ", " + title(EtnaConfig.profile);
+		return title(EtnaConfig.quality) + " " + shadows + ", AA " + (EtnaConfig.antiAliasing ? "on" : "off") + ", " + title(EtnaConfig.profile)
+			+ ", world " + Math.round(100.0F * EtnaScale.levelWidth() / EtnaScale.screenWidth()) + "%"
+			+ (EtnaConfig.autoResolutionFps > 0 ? " (auto " + EtnaConfig.autoResolutionFps + " fps)" : "");
 	}
 
 	/** Device, settings and anything else that changes what the numbers mean: printed before the first line. */
@@ -503,6 +519,8 @@ public final class EtnaProfiler {
 			.append(", anti-aliasing ").append(EtnaConfig.antiAliasing ? "on" : "off")
 			.append("), profile ").append(title(EtnaConfig.profile))
 			.append(", half resolution ").append(EtnaConfig.halfResolution ? "on" : "off")
+			.append(", world resolution ").append(Math.round(EtnaConfig.renderScale * 100.0F)).append('%')
+			.append(", auto resolution ").append(EtnaConfig.autoResolutionFps > 0 ? EtnaConfig.autoResolutionFps + " fps" : "off")
 			.append(", shadow culling ").append(EtnaConfig.shadowCulling ? "on" : "off")
 			.append(EtnaConfig.shadowGather ? "" : ", shadow gather off")
 			.append(", render distance ").append(mc.options.getEffectiveRenderDistance()).append(" chunks")

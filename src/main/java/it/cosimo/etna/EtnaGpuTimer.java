@@ -26,7 +26,8 @@ import org.jspecify.annotations.Nullable;
  * while the GPU may still write that query, so a slot is only reused after it has come back.
  *
  * Timestamps cost a little: once a frame has one, MoltenVK makes every render pass wait for the previous one
- * to finish. So the timer only runs while the performance log is on or the benchmark runs, only on frames
+ * to finish. So the timer only runs while the performance log is on, the benchmark runs or Auto Resolution
+ * steers the world's size (EtnaAutoScale), only on frames
  * that draw the world, and only on one frame in {@link #EVERY}, so the frame rate around it stays the normal
  * one. When MoltenVK cannot sample the GPU's clock it gives every query of a frame the same time; after a run
  * of such frames the timer says so once in the log and stops, and the log and the benchmark show CPU times
@@ -358,6 +359,7 @@ public final class EtnaGpuTimer {
 		passNs[3] = interval(Mark.WORLD_END, Mark.HAND_END);
 		passNs[4] = interval(Mark.HAND_END, Mark.FINAL_END);
 		passNs[5] = interval(Mark.FINAL_END, Mark.FRAME_END);
+		EtnaAutoScale.gpuFrame(slot.frame, passNs);
 		EtnaProfiler.gpuFrame(slot.frame, passNs, totalNs);
 	}
 
@@ -373,7 +375,7 @@ public final class EtnaGpuTimer {
 		unavailable = true;
 		unavailableReason = why;
 		recording = false;
-		EtnaClient.LOGGER.warn("[Etna] GPU timing is unavailable: {}. The performance log and the benchmark show CPU times only.", why);
+		EtnaClient.LOGGER.warn("[Etna] GPU timing is unavailable: {}. The performance log and the benchmark show CPU times only, and Auto Resolution keeps the World Resolution setting.", why);
 	}
 
 	private static void fail(RuntimeException e) {

@@ -71,6 +71,26 @@ vec2 swellSeen(vec2 p, float t, float footprint) {
     return slope;
 }
 
+// Far water seen nearly edge on. The waves a pixel no longer resolves (waveSeen) still tilt the facets it
+// sees towards the eye, by about HIDDEN_TILT (the swell's and the ripples' slopes), which only matters when
+// the view is about as flat as that: those facets mirror sky from above the horizon, and less of it than a
+// flat mirror would. Without them, water far away seen from a block or two above it mirrored almost only
+// the whitish horizon and looked white. How far the facets tilt, for a pixel footprint blocks wide.
+const float HIDDEN_TILT = 0.08;
+float waterHiddenTilt(float footprint) {
+    return HIDDEN_TILT * (1.0 - waveSeen(length(SWELL_WAVES[0].xy), footprint));
+}
+// The cosine between the view and the facets the pixel sees, from cosView, the one to the resolved surface.
+float waterSeenCos(float cosView, float footprint) {
+    float tilt = waterHiddenTilt(footprint);
+    return sqrt(cosView * cosView + tilt * tilt);
+}
+// Where those facets mirror the sky from, for `mirrored`, the reflection off the resolved surface.
+vec3 waterSeenMirror(vec3 mirrored, float footprint) {
+    float lift = 2.0 * waterHiddenTilt(footprint);
+    float up = max(mirrored.y, 0.0);
+    return normalize(vec3(mirrored.x, sqrt(up * up + lift * lift), mirrored.z));
+}
 // Schlick's Fresnel for water seen from the air, at the cosine between the view and the surface's normal:
 // the share of the light the surface mirrors (4 % straight down, all of it at grazing angles).
 float waterFresnel(float cosView) {

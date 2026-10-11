@@ -22,11 +22,16 @@
 
 uniform sampler2D InSampler;
 uniform sampler2D DepthSampler;
+// Main's own depth. With a render scale (EtnaScale) the level's depth comes from the smaller picture
+// (DepthSampler) and main's holds only the hand, drawn after the world at full size: there it says where the
+// hand covers the land. Without one both are the same texture, with the hand already merged in.
+uniform sampler2D HandDepthSampler;
 
 layout(std140) uniform SamplerInfo {
     vec2 OutSize;
     vec2 InSize;
     vec2 DepthSize;
+    vec2 HandDepthSize;
 };
 
 layout(location = 0) in vec2 texCoord;
@@ -49,15 +54,20 @@ vec3 sceneTap(vec2 offset) {
 
 // How much of the bloom fog this output pixel takes: the four depth texels under it, each turned into its
 // share by its distance and averaged, so an edge between near and far land feeds smoothly as the
-// anti-aliasing jitter moves it. The sky (nothing drawn) is as far as it gets.
+// anti-aliasing jitter moves it. The sky (nothing drawn) is as far as it gets. The hand feeds none.
 float fogShare() {
     ivec2 base = ivec2(texCoord * DepthSize - 0.5);
     ivec2 last = ivec2(DepthSize) - 1;
+    bool separateHand = HandDepthSize != DepthSize;
     float share = 0.0;
     for (int i = 0; i < 4; i++) {
         ivec2 p = clamp(base + ivec2(i & 1, i >> 1), ivec2(0), last);
+        vec2 uv = (vec2(p) + 0.5) / DepthSize;
+        if (separateHand && !etnaIsSky(texelFetch(HandDepthSampler, ivec2(uv * HandDepthSize), 0).r)) {
+            continue;
+        }
         float depth = texelFetch(DepthSampler, p, 0).r;
-        float dist = etnaIsSky(depth) ? 1e4 : length(etnaPosition((vec2(p) + 0.5) / DepthSize, depth));
+        float dist = etnaIsSky(depth) ? 1e4 : length(etnaPosition(uv, depth));
         share += 1.0 - exp(-dist * Glow.w);
     }
     return 0.25 * share;

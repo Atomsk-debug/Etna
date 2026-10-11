@@ -9,6 +9,7 @@ import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.renderpearl.api.pipeline.ColorTargetState;
 import it.cosimo.etna.EtnaClient;
 import it.cosimo.etna.EtnaFrame;
+import it.cosimo.etna.EtnaScale;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostChainConfig;
 import net.minecraft.client.renderer.PostPass;
@@ -32,10 +33,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * is "graded", the colour grade's result: it is already clamped and dithered to 8 bits for Minecraft's
  * 8-bit picture, which is all that reads it. Every pass that writes into a 16-bit target is built for
  * that format; passes that write into an 8-bit one keep vanilla's. Etna's targets also get no depth
- * texture (no Etna pass uses one), and fixed-size targets (the bloom levels) are sized for a 1920x1080
- * screen and scaled to the real one, width with width and height with height: the first bloom level is
+ * texture (no Etna pass uses one), and fixed-size targets (the bloom levels, the half-size light shafts and
+ * reflections; their sizes are EtnaScale.REFERENCE_SIZED plus the size) are sized for a 1920x1080 screen and
+ * scaled to the size the chain runs at, width with width and height with height: the first bloom level is
  * always half the screen, so every pixel counts and the glow stays round and the same size on any
- * screen shape.
+ * screen shape. A target sized EtnaScale.SCREEN_SIZED is made the size of the screen itself: the scaled world
+ * chain runs on the smaller picture but keeps its anti-aliasing history at full size.
  *
  * Vanilla clears every target a chain takes for the frame, because a pass may draw over only part of
  * it. Every Etna pass draws every pixel of its target, so Etna's frame targets are taken as they are
@@ -45,7 +48,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * The anti-aliasing history is two persistent targets used in turn: the world chain reads last frame's
  * result from "history0" and writes this frame's into "history1", and the two textures behind those
- * names swap after every frame (EtnaFrame.historySwapped), so the result is never copied.
+ * names swap after every frame (EtnaFrame.historySwapped), so the result is never copied. The water
+ * reflections keep their own history in "water_ssr0" and "water_ssr1" the same way.
  * Vanilla's chains are untouched.
  */
 @Mixin(PostChain.class)
@@ -68,6 +72,13 @@ public abstract class PostChainMixin {
 	@Unique
 	private static final Identifier ETNA_HISTORY_WRITE = Identifier.withDefaultNamespace("history1");
 
+	/** The water reflections' own history, kept the same way; gen_post_effects.py knows these names. */
+	@Unique
+	private static final Identifier ETNA_SSR_READ = Identifier.withDefaultNamespace("water_ssr0");
+
+	@Unique
+	private static final Identifier ETNA_SSR_WRITE = Identifier.withDefaultNamespace("water_ssr1");
+
 	@Unique
 	private static boolean etna$hdrPass;
 
@@ -86,7 +97,7 @@ public abstract class PostChainMixin {
 			CallbackInfoReturnable<PostPass> cir) {
 		Identifier output = config.outputTarget();
 		etna$hdrPass = passId.getNamespace().equals(EtnaClient.MOD_ID) && !output.equals(PostChain.MAIN_TARGET_ID)
-			&& !output.equals(ETNA_GRADED);
+			&& !output.equals(EtnaScale.SCREEN) && !output.equals(ETNA_GRADED);
 	}
 
 	@ModifyArg(
@@ -131,10 +142,16 @@ public abstract class PostChainMixin {
 		index = 0
 	)
 	private int etna$targetWidth(int width) {
-		if (!this.id.getNamespace().equals(EtnaClient.MOD_ID) || width == etna$screenWidth) {
+		if (!this.id.getNamespace().equals(EtnaClient.MOD_ID)) {
 			return width;
 		}
-		return Math.max(1, Math.round(width * etna$screenWidth / 1920.0F));
+		if (width == EtnaScale.SCREEN_SIZED) {
+			return EtnaScale.screenWidth();
+		}
+		if (width > EtnaScale.REFERENCE_SIZED) {
+			return Math.max(1, Math.round((width - EtnaScale.REFERENCE_SIZED) * etna$screenWidth / 1920.0F));
+		}
+		return width;
 	}
 
 	@ModifyArg(
@@ -146,10 +163,16 @@ public abstract class PostChainMixin {
 		index = 1
 	)
 	private int etna$targetHeight(int height) {
-		if (!this.id.getNamespace().equals(EtnaClient.MOD_ID) || height == etna$screenHeight) {
+		if (!this.id.getNamespace().equals(EtnaClient.MOD_ID)) {
 			return height;
 		}
-		return Math.max(1, Math.round(height * etna$screenHeight / 1080.0F));
+		if (height == EtnaScale.SCREEN_SIZED) {
+			return EtnaScale.screenHeight();
+		}
+		if (height > EtnaScale.REFERENCE_SIZED) {
+			return Math.max(1, Math.round((height - EtnaScale.REFERENCE_SIZED) * etna$screenHeight / 1080.0F));
+		}
+		return height;
 	}
 
 	@ModifyArg(
@@ -193,8 +216,9 @@ public abstract class PostChainMixin {
 
 	/**
 	 * Every other frame the world chain's two history names are given each other's textures: the pass
-	 * that reads "history0" then reads what the last frame wrote into "history1". Only the lookup changes;
-	 * each texture is still made, resized and freed with the chain's other persistent targets.
+	 * that reads "history0" then reads what the last frame wrote into "history1", and the same for the water
+	 * reflections' "water_ssr0" and "water_ssr1". Only the lookup changes; each texture is still made,
+	 * resized and freed with the chain's other persistent targets.
 	 */
 	@ModifyArg(
 		method = "addToFrame",
@@ -205,12 +229,18 @@ public abstract class PostChainMixin {
 		index = 0
 	)
 	private Identifier etna$historyInTurn(Identifier target) {
-		if (!EtnaFrame.historySwapped() || !this.id.equals(EtnaFrame.WORLD)) {
+		if (!EtnaFrame.historySwapped() || !(this.id.equals(EtnaFrame.WORLD) || this.id.equals(EtnaFrame.WORLD_SCALED))) {
 			return target;
 		}
 		if (target.equals(ETNA_HISTORY_READ)) {
 			return ETNA_HISTORY_WRITE;
 		}
-		return target.equals(ETNA_HISTORY_WRITE) ? ETNA_HISTORY_READ : target;
+		if (target.equals(ETNA_HISTORY_WRITE)) {
+			return ETNA_HISTORY_READ;
+		}
+		if (target.equals(ETNA_SSR_READ)) {
+			return ETNA_SSR_WRITE;
+		}
+		return target.equals(ETNA_SSR_WRITE) ? ETNA_SSR_READ : target;
 	}
 }

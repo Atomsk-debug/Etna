@@ -1,12 +1,12 @@
 {
     "targets": {
         "shafts": {
-            "width": 960,
-            "height": 540
+            "width": 20960,
+            "height": 20540
         },
         "water_ssr": {
-            "width": 960,
-            "height": 540
+            "width": 20960,
+            "height": 20540
         },
         "lit": {}
     },
@@ -66,6 +66,10 @@
                     "sampler_name": "Depth",
                     "target": "minecraft:main",
                     "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "SsrHistory",
+                    "target": "shafts"
                 }
             ],
             "output": "water_ssr",

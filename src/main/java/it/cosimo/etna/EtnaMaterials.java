@@ -121,12 +121,16 @@ public final class EtnaMaterials {
 	/**
 	 * The EtnaSurface and EtnaSurface2 vec4s of the terrain block, bytes 512 to 543: the materials, puddles,
 	 * sparkles and glowing flowers settings, and how much the specks of glowing blocks glow (the glowing blocks
-	 * setting: unlike the light-15 glow of terrain_dark.glsl, the specks don't need smooth lighting).
+	 * setting: unlike the light-15 glow of terrain_dark.glsl, the specks don't need smooth lighting), and the share of
+	 * the screen's width the level is drawn at this frame (EtnaScale), which the block textures' detail follows,
+	 * and this frame's anti-aliasing jitter in the level's pixels (EtnaFrame; 0 without anti-aliasing), which the
+	 * water's glints are held still against (terrain_water.glsl, etnaUnjitter).
 	 */
 	public static void writeTerrain(Std140Builder builder) {
 		builder.putVec4(new Vector4f(EtnaConfig.materials.value, EtnaConfig.puddles.value, EtnaConfig.sparkles.value,
 				EtnaConfig.glowingFlowers.value))
-			.putVec4(new Vector4f(EtnaConfig.emission.value, 0.0F, 0.0F, 0.0F));
+			.putVec4(new Vector4f(EtnaConfig.emission.value, (float) EtnaScale.levelWidth() / EtnaScale.screenWidth(),
+				EtnaFrame.jitterX(), EtnaFrame.jitterY()));
 	}
 
 	/** A block's model that puts in its material's tag while Etna is on. */

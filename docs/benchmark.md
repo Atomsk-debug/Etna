@@ -19,7 +19,7 @@ Both tools are on the **General** page of Options > Etna Shaders...
 * **Performance log**: set it to Summary, and every 5 seconds a line goes to `logs/latest.log` with the frame
   rate, the frame time and where it goes, on the CPU and on the GPU (each pass of Etna timed on one frame in
   eight), and the draw calls.
-* **Run benchmark**: about 130 seconds, hands off, inside a world. Etna measures itself off, as set, and with each
+* **Run benchmark**: about 150 seconds, hands off, inside a world. Etna measures itself off, as set, and with each
   costly feature off in turn, then writes a table of what each one costs to `logs/latest.log` and puts every
   setting back as it was. The sun and the weather hold still while it runs, so every step sees the same shadows
   (the rain the server sent comes back when it ends). If the scene still changes (chunks loading, mobs walking

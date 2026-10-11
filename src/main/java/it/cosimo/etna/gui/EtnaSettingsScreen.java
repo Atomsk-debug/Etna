@@ -104,6 +104,7 @@ public final class EtnaSettingsScreen extends Screen {
 			EtnaConfig.shoreFoam.set(EtnaConfig.SHORE_FOAM_DEFAULT);
 			EtnaConfig.waterGlitter.set(EtnaConfig.WATER_GLITTER_DEFAULT);
 			EtnaConfig.resetSky();
+			EtnaConfig.entityLighting = true;
 			this.open(this.page);
 		}).bounds(8, this.height - 28, SIDEBAR_WIDTH - 16, 20).build());
 
@@ -166,6 +167,16 @@ public final class EtnaSettingsScreen extends Screen {
 		// Not part of the look: moving it keeps the look as it is.
 		this.add(new Slider("visibility", EtnaConfig.visibility.min, EtnaConfig.visibility.max, EtnaConfig.visibility.value,
 			EtnaSettingsScreen::percentOrOff, v -> EtnaConfig.visibility.set((float) v)), "visibility");
+		// Not part of the look either: how many pixels the world is drawn at (EtnaScale), in steps of 5%.
+		this.add(new Slider("renderScale", EtnaConfig.RENDER_SCALE_MIN, 1.0, EtnaConfig.renderScale,
+			v -> Component.literal(Math.round(v * 20.0) * 5 + "%"), v -> EtnaConfig.renderScale = Math.round((float) v * 20.0F) / 20.0F),
+			"renderScale");
+		// Auto Resolution: the frame rate to hold, or off (EtnaAutoScale); World Resolution is then its lowest.
+		this.cycle("autoResolution",
+			() -> EtnaConfig.autoResolutionFps > 0
+				? Component.translatable("etna.options.autoResolution.fps", EtnaConfig.autoResolutionFps)
+				: CommonComponents.OPTION_OFF,
+			() -> EtnaConfig.autoResolutionFps = nextFps(EtnaConfig.autoResolutionFps));
 		if (MacosUtil.IS_MACOS) {
 			this.cycle("resolution",
 				() -> Component.translatable(EtnaConfig.halfResolution ? "etna.options.resolution.half" : "etna.options.resolution.full"),
@@ -231,6 +242,8 @@ public final class EtnaSettingsScreen extends Screen {
 		this.look(EtnaConfig.shadowDarkness, EtnaSettingsScreen::percent);
 		this.look(EtnaConfig.sunlight, EtnaSettingsScreen::percent);
 		this.look(EtnaConfig.caveLight, EtnaSettingsScreen::percentOrOff);
+		// 0.9.0: not part of the Look or the Quality.
+		this.cycle("entityLighting", () -> onOff(EtnaConfig.entityLighting), () -> EtnaConfig.entityLighting = !EtnaConfig.entityLighting);
 	}
 
 	private void surfacesPage() {
@@ -496,6 +509,17 @@ public final class EtnaSettingsScreen extends Screen {
 
 	private static String key(Enum<?> value) {
 		return value.name().toLowerCase(Locale.ROOT);
+	}
+
+	/** The next of EtnaConfig.AUTO_RESOLUTION_FPS after {@code fps} (a value from the file that isn't one goes to off). */
+	private static int nextFps(int fps) {
+		int[] values = EtnaConfig.AUTO_RESOLUTION_FPS;
+		for (int i = 0; i < values.length; i++) {
+			if (values[i] == fps) {
+				return values[(i + 1) % values.length];
+			}
+		}
+		return 0;
 	}
 
 	private static Component onOff(boolean on) {

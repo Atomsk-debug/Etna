@@ -9,6 +9,7 @@ import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import it.cosimo.etna.EtnaClient;
 import it.cosimo.etna.EtnaLook;
 import it.cosimo.etna.EtnaMotes;
+import it.cosimo.etna.EtnaScale;
 import it.cosimo.etna.EtnaShadows;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostPass;
@@ -35,7 +36,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * the chain points at main's depth as a stand-in, is swapped for the map (EtnaShadows.POST_MAP) before the
  * pass is first drawn. The pass's bindings were laid out from the chain's names, so they stay the same.
  * The same way, the last world pass's "EtnaMotes" block gets the fireflies' buffer (EtnaMotes), which it keeps
- * for the session.
+ * for the session. Every input of an Etna pass that reads main's depth reads the level's depth instead
+ * (EtnaScale.LevelDepth), which with a render scale lies in the smaller target, not in main.
  *
  * Vanilla also opens every pass by loading what its target held, because a pass may draw over part of it.
  * Every Etna pass draws every pixel of its target with no blending, so an Etna pass that writes one of
@@ -74,7 +76,7 @@ public abstract class PostPassMixin {
 		}
 		// The pass's location is its chain's id plus its index, so the namespace says whose chain it is.
 		boolean etna = pipeline.getLocation().getNamespace().equals(EtnaClient.MOD_ID);
-		etna$ownTarget = etna && !outputTargetId.equals(PostChain.MAIN_TARGET_ID);
+		etna$ownTarget = etna && !outputTargetId.equals(PostChain.MAIN_TARGET_ID) && !outputTargetId.equals(EtnaScale.SCREEN);
 		if (etna) {
 			GpuBuffer shadowFixed = customUniforms.get(EtnaShadows.BLOCK);
 			if (shadowFixed != null) {
@@ -89,7 +91,8 @@ public abstract class PostPassMixin {
 				etna$motesBlock = true;
 			}
 			// The pass keeps this same list (createPass makes it for the pass alone).
-			inputs.replaceAll(input -> input.samplerName().equals(EtnaShadows.MAP_INPUT) ? EtnaShadows.POST_MAP : input);
+			inputs.replaceAll(input -> input.samplerName().equals(EtnaShadows.MAP_INPUT) ? EtnaShadows.POST_MAP
+				: EtnaScale.LevelDepth.readsMainDepth(input) ? new EtnaScale.LevelDepth(input) : input);
 		}
 	}
 

@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * A step whose camera moves or turns, or that hits a frame over 50 ms (a pipeline compile, chunks
  * loading, a garbage collection), starts measuring again half a second later, up to three tries; only a
  * few of those in a run, so it stays within about two minutes. The table marks the steps that stayed
- * disturbed. Twenty steps take about 130 seconds. The run moves on from the start of each frame; a
+ * disturbed. Twenty-three steps take about 150 seconds. The run moves on from the start of each frame; a
  * client-tick listener only watches Etna's key.
  *
  * The sun holds still for the run, where Etna and the sky read it: in the two minutes a run takes it
@@ -109,6 +109,11 @@ public final class EtnaBenchmark {
 			EtnaConfig.lightRays.set(0.0F);
 			EtnaConfig.mist.set(0.0F);
 		}, base -> base.look(EtnaConfig.lightRays) > 0.0F || base.look(EtnaConfig.mist) > 0.0F),
+		// The benchmark holds the sun, so the fade from one shadow map to the next as the sun moves never runs by
+		// itself: this step holds one at its middle, where every sunlit pixel reads both maps (EtnaShadows.benchmarkFade).
+		// It costs more than "as set", unlike the others: what playing near sunrise and sunset adds.
+		new Step("shadow map fade", Role.SHADOWS, () -> EtnaShadows.benchmarkFade = true,
+			base -> base.shadows),
 		new Step("hard shadow edges", Role.SHADOWS, () -> EtnaConfig.shadowSoftness.set(0.25F),
 			base -> base.look(EtnaConfig.shadowSoftness) != 0.25F),
 		new Step("shadow map 2048", Role.SHADOWS, () -> EtnaConfig.shadowResolution = 2048,
@@ -121,6 +126,9 @@ public final class EtnaBenchmark {
 			base -> base.shadows),
 		new Step(AA_OFF, Role.OTHER, () -> EtnaConfig.antiAliasing = false,
 			base -> base.antiAliasing),
+		// The world drawn at 75% of the width and height, built back up by the anti-aliasing (EtnaScale).
+		new Step("world resolution 75%", Role.OTHER, () -> EtnaConfig.renderScale = 0.75F,
+			base -> base.antiAliasing && base.renderScale != 0.75F),
 		new Step("surface detail+shine off", Role.OTHER, () -> {
 			EtnaConfig.surfaceDetail.set(0.0F);
 			EtnaConfig.shine.set(0.0F);
@@ -157,6 +165,10 @@ public final class EtnaBenchmark {
 		}, base -> base.nightSky != EtnaConfig.NightSky.STARS && base.nightSky != EtnaConfig.NightSky.OFF
 			|| base.aurora != EtnaConfig.Aurora.OFF || base.shootingStars != EtnaConfig.ShootingStars.OFF
 			|| base.rainbows != EtnaConfig.Rainbows.OFF || base.biomeSkyColor > 0.0F || base.fireflies != EtnaConfig.Fireflies.OFF),
+		// 0.9.0: mobs, block entities, items and the hand back on vanilla's light (EtnaEntities), so their shadow map
+		// lookups go too.
+		new Step("entity lighting off", Role.OTHER, () -> EtnaConfig.entityLighting = false,
+			base -> base.entityLighting),
 		new Step("rain+bloom fog+nether off", Role.OTHER, () -> {
 			EtnaConfig.rainLook = EtnaConfig.RainLook.VANILLA;
 			EtnaConfig.bloomFog.set(0.0F);
@@ -913,6 +925,7 @@ public final class EtnaBenchmark {
 		final float shadowDistance = EtnaConfig.shadowDistance;
 		final boolean antiAliasing = EtnaConfig.antiAliasing;
 		final boolean shadowCulling = EtnaConfig.shadowCulling;
+		final float renderScale = EtnaConfig.renderScale;
 		final float[] look = new float[EtnaConfig.LOOK.size()];
 		// The 0.8.0 settings outside the Look.
 		final EtnaConfig.Mood mood = EtnaConfig.mood;
@@ -932,6 +945,7 @@ public final class EtnaBenchmark {
 		final EtnaConfig.RainLook rainLook = EtnaConfig.rainLook;
 		final float bloomFog = EtnaConfig.bloomFog.value;
 		final float netherAir = EtnaConfig.netherAir.value;
+		final boolean entityLighting = EtnaConfig.entityLighting;
 
 		Snapshot() {
 			for (int i = 0; i < this.look.length; i++) {
@@ -953,6 +967,9 @@ public final class EtnaBenchmark {
 			EtnaConfig.shadowDistance = this.shadowDistance;
 			EtnaConfig.antiAliasing = this.antiAliasing;
 			EtnaConfig.shadowCulling = this.shadowCulling;
+			EtnaConfig.renderScale = this.renderScale;
+			// Never on outside its own step.
+			EtnaShadows.benchmarkFade = false;
 			for (int i = 0; i < this.look.length; i++) {
 				// Exactly the old value: Setting.set would clamp, and these came from the same ranges anyway.
 				EtnaConfig.LOOK.get(i).value = this.look[i];
@@ -974,6 +991,7 @@ public final class EtnaBenchmark {
 			EtnaConfig.rainLook = this.rainLook;
 			EtnaConfig.bloomFog.value = this.bloomFog;
 			EtnaConfig.netherAir.value = this.netherAir;
+			EtnaConfig.entityLighting = this.entityLighting;
 		}
 	}
 }

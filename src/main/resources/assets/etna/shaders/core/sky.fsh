@@ -197,7 +197,9 @@ vec3 star(vec3 dir, float pixelAngle, float seconds, float grid, float density, 
 // The Milky Way on the star sphere: a soft band brightest towards its core, mottled with star clouds and
 // cut lengthwise by dark dust lanes; bluish along the arms, warm in the core. nebula (0 .. 1) adds faint
 // rose and teal gas clouds along it. Coordinates are galactic longitude and latitude, so the noise
-// stretches along the band and never meets a seam; nothing in it is smaller than a few pixels.
+// stretches along the band and never meets a seam. Two fine octaves (9 and 15 times the base) give the star
+// clouds and the dust lanes' edges grain down to about three pixels at 1080p, so the band reads as countless
+// stars and dust rather than a few soft blobs; finer than that would shimmer as the sky turns.
 vec3 milkyWay(vec3 starDir, float b, float nebula) {
     float along = atan(dot(starDir, GALAXY_SIDE), dot(starDir, GALAXY_CENTRE));
     float toCentre = dot(starDir, GALAXY_CENTRE);
@@ -207,17 +209,23 @@ vec3 milkyWay(vec3 starDir, float b, float nebula) {
     // 0.75 so the dust tiles a whole number of times round the band (BAND_TILES * 0.75 = 3), with no seam
     // where the band's coordinate wraps.
     vec4 dustNoise = noise(vec2(uv.x * 0.75, uv.y * 3.0) + vec2(0.71, 0.13));
+    // Whole multiples, so the fine octaves meet themselves round the band too.
+    vec4 detail = noise(uv * 9.0 + vec2(0.23, 0.89));
+    vec4 grain = noise(uv * 15.0 + vec2(0.53, 0.17));
+    float finest = 0.6 * detail.b + 0.4 * grain.a;
 
     float band = bandOf(b) * (0.55 + 0.45 * smoothstep(-0.6, 1.0, toCentre));
     float core = exp(-(1.0 - toCentre) * 7.0) * exp(-b * b * (0.5 / (CORE_WIDTH * CORE_WIDTH)));
-    float clouds = 0.7 * big.r + 0.3 * fine.b;
+    float clouds = 0.55 * big.r + 0.25 * fine.b + 0.2 * detail.a;
     float light = band * (0.4 + 0.75 * smoothstep(0.25, 0.8, clouds)) + 1.5 * core * (0.7 + 0.45 * fine.a);
+    // The grain of unresolved stars: about as bright on average, much finer.
+    light *= 0.7 + 0.6 * finest;
     // The dust lanes: a long, wavering dark rift down the middle of the band, denser in some places than
     // others and widest over the core.
     float offset = (dustNoise.g - 0.5) * 0.07;
     float width = DUST_WIDTH * (1.0 + 0.8 * core) * (0.7 + 0.6 * dustNoise.b);
     float rift = exp(-(b - offset) * (b - offset) * (0.5 / (width * width)));
-    float lanes = rift * (0.3 + 0.7 * smoothstep(0.35, 0.68, dustNoise.r));
+    float lanes = rift * (0.3 + 0.7 * smoothstep(0.35, 0.68, dustNoise.r + 0.3 * (detail.g - 0.5) + 0.2 * (grain.r - 0.5)));
     light *= 1.0 - 0.72 * lanes;
     vec3 color = mix(vec3(0.62, 0.70, 1.0), vec3(1.0, 0.88, 0.74), min(core * 1.5, 1.0)) * light;
     if (nebula > 0.0) {

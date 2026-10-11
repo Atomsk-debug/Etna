@@ -8,7 +8,8 @@
 float shadowVisibility(vec3 normal, bool thin); // shadeTerrain: filtered shadow on this fragment, 1 lit .. 0 shaded
 float shadowAt(vec3 position);                  // sunGlint, waterFromBelow, etnaWaterPrepare: unfiltered lookup at a camera-relative point
 float shadowAtSample(vec3 position, float pick); // underwaterShafts: the same, one map per jittered sample
-vec4 shadowSpace(vec3 position);                // a camera-relative point in the map: xy uv, z expected depth, w how far out (1 at the edge)
+float shadowSoftAt(vec3 position);              // waterBodyShadow: the same, with the four texels round the point blended
+vec4 shadowSpace(vec3 position);                // a camera-relative point in the map: xy uv, z expected depth, w how far out from the camera (1 at the edge, etnaMapOut)
 float leafBacklight();                          // leafGlow: sunlight through the leaves to this one, 0 .. 1
 // terrain_clouds.glsl: the clouds' shadows, in the same draws.
 float etnaCloudShadow();                        // shadeTerrain: direct light the clouds let through, 1 in the open .. 1 - strength under a cloud
@@ -24,6 +25,9 @@ vec3 etnaSkyShare(vec3 skyPart);        // shadeTerrain: the sky's share of vani
 void etnaFinalSkyShare(vec3 skyPart);   // shadeTerrain: the sky's share as skyLighting gets multiplied with it
 float etnaShadeOpen();                  // etnaShadeWeight (terrain_dark.glsl): how open to the light from above
 vec4 shadeWater(vec4 color, vec3 normal); // main, for water (etnaMaterial 3)
+#if defined(ETNA_SHADOWS) && defined(ETNA_TRANSLUCENT_LAYER)
+float waterBodyShadow(vec3 normal);     // shadeTerrain, water: the sun's share in the light the water scatters back
+#endif
 vec3 etnaMediumFog(vec3 color);         // main, after the distance haze and before vanilla's fog
 float etnaEnvironmentalFog();           // calculateFinalColor: factor on vanilla's environmental fog
 

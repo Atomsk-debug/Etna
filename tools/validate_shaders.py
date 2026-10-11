@@ -5,7 +5,8 @@ assets/<namespace>/shaders/include, falling back to a copy of the vanilla includ
 injected after the #version/#extension lines. Etna's core shaders (assets/etna/shaders/core) are compiled
 with every define combination the game builds them with: terrain, clouds and weather with those of the
 vanilla pipelines Etna copies onto them (terrain has many; clouds vanilla's two and Etna's lit copy; weather
-vanilla's and the Improved Transparency stages), the sky with the base defines; each with both depth conventions. In each combination the vertex outputs are checked
+vanilla's and the Improved Transparency stages; entity and item those of the entity and item pipelines Etna lights),
+the sky with the base defines; each with both depth conventions. In each combination the vertex outputs are checked
 against the fragment inputs, after glslang's own preprocessor has resolved the #ifdefs.
 
 Etna never overrides vanilla's own assets (assets/minecraft): with Etna off the game must look exactly as
@@ -102,12 +103,52 @@ WEATHER_VARIANTS = [
     {"OIT": "", "OIT_ALPHA_ONLY": "", "OIT_TRANSMITTANCE": ""},
     {"OIT": "", "OIT_ALPHA_ONLY": "", "OIT_DEPTH_BOUNDS": ""},
 ]
-# Define sets each of Etna's core shaders is built with: terrain, clouds and weather take the defines of the
-# vanilla pipelines Etna copies onto them (EtnaShadows.copy); any other is built with no defines of its own.
-CORE_VARIANTS = {"terrain": TERRAIN_VARIANTS, "clouds": CLOUDS_VARIANTS, "weather": WEATHER_VARIANTS}
+# Etna's copies of vanilla's entity and item pipelines (EtnaEntities.java): each vanilla pipeline's own defines, with
+# Etna's block (ETNA_SHADOWS), lit for the world or for the first-person hand (ETNA_HAND), and with the shadow
+# filter's texelFetch fallback (ETNA_SHADOW_FETCH). Improved Transparency's stages are not copied, but the shaders
+# keep vanilla's code for them, so a few are built too.
+ENTITY_PIPELINES = [
+    {},  # ENTITY_SOLID, ENTITY_SOLID_Z_OFFSET_FORWARD
+    {"ALPHA_CUTOUT": "0.1"},  # ENTITY_CUTOUT_CULL (chests), ENTITY_TRANSLUCENT_CULL
+    {"ALPHA_CUTOUT": "0.1", "PER_FACE_LIGHTING": ""},  # ENTITY_CUTOUT, ENTITY_CUTOUT_Z_OFFSET, ENTITY_TRANSLUCENT
+    {"ALPHA_CUTOUT": "0.1", "NO_OVERLAY": "", "PER_FACE_LIGHTING": ""},  # ARMOR_CUTOUT_NO_CULL, ARMOR_DECAL_CUTOUT_NO_CULL, WOLF_ARMOR_CRACKS
+    {"ALPHA_CUTOUT": "0.1", "NO_OVERLAY": "", "PER_FACE_LIGHTING": "", "GLINT": ""},  # ARMOR_CUTOUT_NO_CULL_GLINT
+    {"GLINT": ""},  # ENTITY_SOLID_GLINT
+    {"NO_OVERLAY": ""},  # BANNER_PATTERN
+]
+ITEM_PIPELINES = [
+    {"ALPHA_CUTOUT": "0.1"},  # ITEM_CUTOUT, ITEM_TRANSLUCENT
+    {"ALPHA_CUTOUT": "0.1", "GLINT": ""},  # ITEM_CUTOUT_GLINT, ITEM_TRANSLUCENT_GLINT
+    {"ALPHA_CUTOUT": "0.1", "GLINT": "", "GLINT_SPECIAL": ""},  # ITEM_CUTOUT_GLINT_SPECIAL, ITEM_TRANSLUCENT_GLINT_SPECIAL
+]
+OIT_STAGES = [
+    {"OIT": "", "OIT_ACCUMULATE": ""},
+    {"OIT": "", "OIT_ALPHA_ONLY": "", "OIT_TRANSMITTANCE": ""},
+    {"OIT": "", "OIT_ALPHA_ONLY": "", "OIT_DEPTH_BOUNDS": ""},
+]
+
+
+def etna_model_variants(pipelines):
+    lit = [{**p, "ETNA_SHADOWS": "", **extra} for p in pipelines
+           for extra in ({}, {"ETNA_HAND": ""}, {"ETNA_SHADOW_FETCH": ""}, {"ETNA_HAND": "", "ETNA_SHADOW_FETCH": ""})]
+    # Vanilla's stage pipelines all test alpha at 0.1.
+    stages = [{"ALPHA_CUTOUT": "0.1", "ETNA_SHADOWS": "", **s} for s in OIT_STAGES]
+    return lit + stages
+
+
+ENTITY_VARIANTS = etna_model_variants(ENTITY_PIPELINES)
+ITEM_VARIANTS = etna_model_variants(ITEM_PIPELINES)
+# Define sets each of Etna's core shaders is built with: terrain, clouds, weather, entity and item take the defines
+# of the vanilla pipelines Etna copies onto them (EtnaShadows.copy); any other is built with no defines of its own.
+CORE_VARIANTS = {"terrain": TERRAIN_VARIANTS, "clouds": CLOUDS_VARIANTS, "weather": WEATHER_VARIANTS,
+                 "entity": ENTITY_VARIANTS, "item": ITEM_VARIANTS}
 
 
 def vanilla_dir():
+    if len(sys.argv) > 1 and sys.argv[1].startswith("-"):
+        # Not a folder: "--help" once became one, with Mojang's shaders downloaded into it.
+        print(__doc__)
+        sys.exit(0 if sys.argv[1] in ("-h", "--help") else 2)
     d = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build/vanilla-assets"
     inc = d / "minecraft/shaders/include"
     inc.mkdir(parents=True, exist_ok=True)

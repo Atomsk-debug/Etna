@@ -3,14 +3,11 @@
 	"id": "etna",
 	"version": "${version}",
 	"name": "Etna Shaders",
-	"description": "Shaders for Minecraft's native Vulkan renderer, built only on the game's own render backend. Temporal anti-aliasing, shadow map distortion and the water's Fresnel function are ported from Photon Shaders by SixthSurge (see CREDITS.md).",
+	"description": "Shaders for Minecraft's native Vulkan renderer, built only on the game's own render backend. Original code; the techniques it follows are credited in CREDITS.md.",
 	"authors": [
 		"Cosimo"
 	],
-	"license": [
-		"MIT",
-		"LicenseRef-Photon-Shaders-License"
-	],
+	"license": "MIT",
 	"environment": "client",
 	"entrypoints": {
 		"client": [
@@ -28,8 +25,5 @@
 	},
 	"breaks": {
 		"vulkanmod": "*"
-	},
-	"contributors": [
-		"SixthSurge (Photon Shaders: temporal anti-aliasing, shadow distortion, water Fresnel)"
-	]
+	}
 }

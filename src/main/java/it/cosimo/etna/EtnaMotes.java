@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.SplittableRandom;
 
 import com.mojang.blaze3d.buffers.Std140Builder;
-import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import net.minecraft.client.Minecraft;
@@ -465,14 +464,14 @@ public final class EtnaMotes {
 			for (int i = 0; i < TILES_X * TILES_Y; i++) {
 				bytes.putInt(TILES_OFFSET + i * 4, 0);
 			}
-			RenderTarget screen = Minecraft.getInstance().gameRenderer.mainRenderTarget();
 			Vec3 camera = state.cameraRenderState.pos;
 			EtnaFrame.viewProjection(viewProjection);
 			for (Mote mote : motes) {
 				if (drawn == MAX) {
 					break;
 				}
-				if (project(bytes, mote, camera, screen.width, screen.height)) {
+				// The motes are drawn on the full-size picture, also when the world is drawn smaller (EtnaScale).
+				if (project(bytes, mote, camera, EtnaScale.screenWidth(), EtnaScale.screenHeight())) {
 					drawn++;
 				}
 			}

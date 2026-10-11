@@ -3,6 +3,7 @@ package it.cosimo.etna.mixin;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import it.cosimo.etna.EtnaBenchmark;
+import it.cosimo.etna.EtnaEntities;
 import it.cosimo.etna.EtnaGpuTimer;
 import it.cosimo.etna.EtnaLook;
 import it.cosimo.etna.EtnaMotes;
@@ -26,7 +27,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * pass open. Each injection tells the shadow pass which of vanilla's
  * two ways of preparing the draws is in use, so it prepares its own the same way. The GPU timer brackets
  * the shadow pass here too, as its timestamps must sit outside any render pass (only while the performance
- * log or the benchmark runs; otherwise each mark is one static check).
+ * log or the benchmark runs; otherwise each mark is one static check). From here on the frame's draws belong to the
+ * level, which Etna's entity lighting needs to know (EtnaEntities): it lights the level's entities and the hand, never
+ * the menus.
  */
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin {
@@ -53,6 +56,7 @@ public abstract class LevelRendererMixin {
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_START);
 		EtnaShadows.prepareFrame((LevelRenderer) (Object) this, levelRenderState, fogBuffer, true);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_END);
+		EtnaEntities.beginWorld();
 		EtnaMotes.upload(levelRenderState);
 		EtnaLook.upload();
 	}
@@ -76,6 +80,7 @@ public abstract class LevelRendererMixin {
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_START);
 		EtnaShadows.prepareFrame((LevelRenderer) (Object) this, levelRenderState, fogBuffer, false);
 		EtnaGpuTimer.mark(EtnaGpuTimer.Mark.SHADOW_END);
+		EtnaEntities.beginWorld();
 		EtnaMotes.upload(levelRenderState);
 		EtnaLook.upload();
 	}

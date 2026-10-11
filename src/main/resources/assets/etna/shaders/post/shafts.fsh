@@ -48,16 +48,22 @@ const float SHAFT_CURVE = 4.0;
 const float SHAFT_SCALE = 15.0;
 const float SHAFT_RATIO = 1.41421356;
 
-// Which pixel of the 2x2 block a texel stands for, frame by frame: the two diagonals in turn (the same order
-// as Photon Shaders' checkerboard.glsl).
-const ivec2 SUBPIXEL[4] = ivec2[4](ivec2(0, 0), ivec2(1, 1), ivec2(1, 0), ivec2(0, 1));
+// Which pixel of the 2x2 block a texel stands for on frame i (0 .. 3): the cells of the 2x2 ordered-dither matrix
+// (Bryce Bayer, "An optimum method for two-level rendition of continuous-tone pictures", 1973) in the order of
+// their thresholds, read down the columns. Each pair of frames covers a diagonal, so any two frames in a row
+// already spread over the block, and four cover it all.
+ivec2 subpixel(int i) {
+    return ivec2(i & 1, (i ^ (i >> 1)) & 1);
+}
 
 // 1 where the sun reaches a point of the ray, given as a position in the shadow map's clip space, 0 where
 // something nearer the light blocks it. The same test and bias as the terrain's unfiltered lookups
-// (terrain_shadow.glsl), and outside the map, or fading towards its edge, the point counts as lit.
+// (terrain_shadow.glsl), and outside the map, or fading towards its edge, the point counts as lit. How far
+// out it lies is counted from the camera, as the terrain's etnaMapOut does, so the shafts end where the shadows do.
 float sunAt(vec3 clip) {
-    float edge = max(abs(clip.x), abs(clip.y));
-    if (edge >= 1.0) {
+    vec2 away = abs(clip.xy - EtnaShadowMat[3].xy);
+    float edge = max(away.x, away.y) / (EtnaShadowInfo.w > 0.0 ? EtnaShadowInfo.w : 1.0);
+    if (edge >= 1.0 || max(abs(clip.x), abs(clip.y)) >= 1.0) {
         return 1.0;
     }
     vec2 uv = clip.xy / etnaShadowFactor(clip.xy) * 0.5 + 0.5;
@@ -66,6 +72,10 @@ float sunAt(vec3 clip) {
     #else
     float depth = clip.z * 0.5 + 0.5;
     #endif
+    // Beyond the far end of the map's depth range the cleared map holds nothing: lit, as in the terrain.
+    if (depth <= 0.0) {
+        return 1.0;
+    }
     // Reversed depth: bigger is closer to the light.
     float stored = textureLod(EtnaShadowSampler, uv, 0.0).r;
     float lit = stored > depth + EtnaShadowInfo.z * 0.05 ? 0.0 : 1.0;
@@ -74,7 +84,7 @@ float sunAt(vec3 clip) {
 
 void main() {
     ivec2 cell = ivec2(gl_FragCoord.xy);
-    ivec2 sub = Frame.w > 0.5 ? SUBPIXEL[int(Frame.x) & 3] : ivec2(0);
+    ivec2 sub = Frame.w > 0.5 ? subpixel(int(Frame.x) & 3) : ivec2(0);
     ivec2 pixel = min(cell * 2 + sub, ivec2(DepthSize) - 1);
     float depth = texelFetch(DepthSampler, pixel, 0).r;
     vec2 uv = (vec2(pixel) + 0.5) / DepthSize;

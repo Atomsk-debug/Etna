@@ -1,0 +1,235 @@
+{
+    "targets": {
+        "shafts": {
+            "width": 20960,
+            "height": 20540
+        },
+        "water_ssr0": {
+            "width": 20960,
+            "height": 20540,
+            "persistent": true
+        },
+        "water_ssr1": {
+            "width": 20960,
+            "height": 20540,
+            "persistent": true
+        },
+        "air": {},
+        "history0": {
+            "persistent": true,
+            "width": 16384,
+            "height": 16384
+        },
+        "history1": {
+            "persistent": true,
+            "width": 16384,
+            "height": 16384
+        }
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/shafts",
+            "inputs": [
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "EtnaShadow",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "shafts",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ],
+                "EtnaShadow": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/water_ssr",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "SsrHistory",
+                    "target": "water_ssr0"
+                }
+            ],
+            "output": "water_ssr1",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ],
+                "EtnaShadow": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/world_light",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                },
+                {
+                    "sampler_name": "Shafts",
+                    "target": "shafts"
+                },
+                {
+                    "sampler_name": "WaterSsr",
+                    "target": "water_ssr1"
+                }
+            ],
+            "output": "air",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/taa",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "air"
+                },
+                {
+                    "sampler_name": "History",
+                    "target": "history0",
+                    "bilinear": true
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "history1",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screentriangle",
+            "fragment_shader": "etna:post/copy_dither",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "history1"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "etna:screen",
+            "uniforms": {
+                "EtnaSettings": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ],
+                "EtnaMotes": [
+                    {
+                        "name": "Placeholder",
+                        "type": "vec4",
+                        "value": [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}
