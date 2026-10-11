@@ -1,8 +1,8 @@
 # Credits
 
 Etna is original code under the MIT licence (`LICENSE`), with these exceptions: the sky's star hash is David
-Hoskins's, under the MIT licence; and the terrain and cloud shaders are based on Minecraft's own, which Etna's
-licence doesn't cover. No code from other shader packs is used.
+Hoskins's, under the MIT licence; and the terrain, cloud, weather, entity and item shaders are based on Minecraft's
+own, which Etna's licence doesn't cover. No code from other shader packs is used.
 
 ## Code ported from other projects
 
@@ -10,7 +10,7 @@ licence doesn't cover. No code from other shader packs is used.
 |---|---|---|
 | `src/main/resources/assets/etna/shaders/core/sky.fsh`: `hash33` (where the stars sit, how bright they are, their colour) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash33`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
 | `src/main/resources/assets/etna/shaders/core/sky.vsh`: `hash41` (when and where a shooting star flares, which way it falls) | "Hash without Sine" by David Hoskins ([shadertoy.com/view/4djSRW](https://www.shadertoy.com/view/4djSRW)), `hash41`, unchanged | MIT, Copyright (c) 2014 David Hoskins, licence text as in `LICENSE` |
-| `src/main/resources/assets/etna/shaders/core/terrain.vsh`, `terrain.fsh`, `clouds.vsh`, `clouds.fsh`, `weather.vsh`, `weather.fsh` | Minecraft's vanilla `terrain`, `clouds` and `particle` core shaders, which Etna replaces while it is on and extends (`weather` is made from `particle`, which vanilla draws rain and snow with) | Based on Minecraft's vanilla shader, (c) Mojang AB, not covered by Etna's MIT licence |
+| `src/main/resources/assets/etna/shaders/core/terrain.vsh`, `terrain.fsh`, `clouds.vsh`, `clouds.fsh`, `weather.vsh`, `weather.fsh`, `entity.vsh`, `entity.fsh`, `item.vsh`, `item.fsh` | Minecraft's vanilla `terrain`, `clouds`, `particle`, `entity` and `item` core shaders, which Etna replaces while it is on and extends (`weather` is made from `particle`, which vanilla draws rain and snow with; `entity` and `item` keep everything of vanilla's but the light) | Based on Minecraft's vanilla shader, (c) Mojang AB, not covered by Etna's MIT licence |
 
 ## Techniques Etna's own code follows
 
